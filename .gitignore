@@ -15,6 +15,7 @@ claude/
 
 # Claude Code
 .claude/
+_ssh/
 
 # Build output
 dist/
