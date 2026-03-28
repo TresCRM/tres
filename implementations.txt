@@ -1,0 +1,69 @@
+How to apply tenant scope + RBAC in future routes
+
+Example pattern for any protected resource:
+
+// inside a route/controller
+import { asObjectId } from "../utils/auth";
+import { requireAuth, requireRoles } from "../middlewares/auth";
+// e.g. in a tickets router
+router.get("/", requireAuth, requireRoles("OWNER","ADMIN","AGENT"), async (req,res) => {
+  const auth = (req as any).auth as { tid: string };
+  const tenantId = asObjectId(auth.tid);
+  const tickets = await Ticket.find({ tenantId }).limit(20).lean();
+  res.json({ data: tickets });
+});
+
+// Paged ADMIN (Optional) add a paged admin route:
+// GET /api/v1/activity?level=ERROR&limit=50&cursor=...
+// ensure requireRoles("OWNER","ADMIN") and tenant filter in the query
+
+
+export type Role = "OWNER" | "ADMIN" | "AGENT" | "BILLING" | "READONLY" | "INTEGRATION";
+4) Roles (consolidated)
+
+Use these across the app:
+
+export type Role = "OWNER" | "ADMIN" | "AGENT" | "BILLING" | "READONLY" | "INTEGRATION";
+
+
+OWNER: everything + billing + user mgmt
+
+ADMIN: everything except ownership transfer
+
+AGENT: tickets full, limited customers
+
+BILLING: subscriptions/invoices
+
+READONLY: read everything; no writes
+
+INTEGRATION: API keys for external systems
+
+Your requireRoles("...") middleware already supports this set.
+
+In controllers (e.g., on reply), call:
+;(global as any).notifyTicket(tenantId, ticketId, { event:"ticket.replied", ... })
+
+
+
+USAGE
+Start infra: docker compose up -d
+Seed demo: pnpm seed:demo
+Run API: pnpm dev:api → http://localhost:4000/docs
+Run worker: pnpm dev:workers
+Play in Postman: import http://localhost:4000/docs/openapi.json
+Watch emails land in MailHog: http://localhost:8025
+
+# Install new files don't require deps; if you added any new ones, install
+pnpm i -w
+
+# Seed demo (gives you an ACTIVE CO-20)
+pnpm seed:demo
+
+# Run API
+pnpm dev:api
+
+# Run billing worker once (simulate daily)
+pnpm worker:billing
+
+# Tests (end-to-end + unit)
+cross-env EMAILS_DISABLED=1 USE_MEMORY_MONGO=1 pnpm test

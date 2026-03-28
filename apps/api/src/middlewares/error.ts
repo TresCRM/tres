@@ -1,0 +1,31 @@
+import { Request, Response, NextFunction } from "express";
+import { AppError } from "../utils/errors";
+import { writeActivity } from "../services/activity";
+
+export function notFound(_req: Request, res: Response) {
+  res.status(404).json({ error: "not_found" });
+}
+
+export async function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
+  const status = err instanceof AppError ? err.status : 500;
+  const code = err instanceof AppError ? err.code : "internal_error";
+  const details = err instanceof AppError ? err.details : undefined;
+
+  // store activity log (error)
+  try {
+    const auth = (req as any).auth;
+    await writeActivity({
+      tenantId: auth?.tid, 
+      userId: auth?.sub,
+      action: JSON.stringify(req.headers) || "ERROR", 
+      resource: req.path, 
+      level: status > 299? "ERROR": "AUDIT",
+      ip: req.ip, 
+      ua: req.get('user-agent') ?? undefined,
+      route: req.originalUrl || req.url || req.route || req.baseUrl || "",
+      meta: { code, details, status, body: JSON.stringify(req.body) }
+    });
+  } catch {/* ignored */}
+
+  _next();
+}

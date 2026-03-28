@@ -1,0 +1,9 @@
+// Example usage in routes: { tenantId: asObjectId((req as any).auth.tid) }
+// rurn see to bypass email verification "seed:local": "bash -lc 'source .env && ts-node apps/api/src/utils/seed.ts'"
+
+// ru examples
+# 1) start API
+pnpm dev:api
+
+# 2) (optional) seed the default tenant + owner
+pnpm seed:local

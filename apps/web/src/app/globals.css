@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Brand tokens (hex-first; easy to use directly) */
+:root {
+  --brand-bg: #f8fafc;
+  --brand-panel: #ffffff;
+  --brand-ink: #0f172a;
+  --brand-muted: #64748b;
+  --brand-primary: #1a73e8;     /* hex */
+  --brand-primary-ink: #ffffff;
+  --radius: 14px;
+
+  /* subtle borders (RGB triplet + alpha) */
+  --border-subtle-rgb: 229 231 235;  /* gray-200 */
+  --border-subtle-alpha: .9;
+
+  /* help Tailwind defaults skew lighter */
+  --tw-border-opacity: .9;
+  --tw-divide-opacity: .35;
+  --color-border: rgb(var(--border-subtle-rgb) / var(--border-subtle-alpha));
+}
+
+html[data-theme="dark"],
+.dark {
+  --brand-bg: #0b1020;
+  --brand-panel: #0f1424;
+  --brand-ink: #e5e7eb;
+  --brand-muted: #a1a1aa;
+  --brand-primary: #4c8df5;
+  --brand-primary-ink: #0b1020;
+
+  --border-subtle-rgb: 255 255 255;
+  --border-subtle-alpha: .12;
+  --tw-border-opacity: .15;
+  --tw-divide-opacity: .12;
+  --color-border: rgb(var(--border-subtle-rgb) / var(--border-subtle-alpha));
+}
+
+/* make borders faint by default */
+*, *::before, *::after {
+  border-color: rgb(var(--border-subtle-rgb) / var(--border-subtle-alpha));
+}
+
+/* normalize form controls */
+input, textarea, select, fieldset, hr {
+  border-color: rgb(var(--border-subtle-rgb) / var(--border-subtle-alpha)) !important;
+}
+fieldset { border-width: 1px; }
+
+/* accessible focus */
+:where(*):focus-visible {
+  outline-color: var(--brand-primary) !important;
+  outline-offset: 2px;
+}
+
+/* helpers */
+.border-strong { border-color: rgb(203 213 225) !important; } /* slate-300 */
+.border-brand  { border-color: var(--brand-primary) !important; }
+.border-muted-b { border-bottom-color: var(--brand-muted) !important; }
+
+html, body, #__next { height: 100% }
+body {
+  background: var(--brand-bg);
+  color: var(--brand-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}

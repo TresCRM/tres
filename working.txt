@@ -1,0 +1,9 @@
+// Next steps
+  // verify step via email reg and set up
+  // set up testing implementation for all the implemented sections
+  // run general end to end testing
+  // set up test monitor
+  // add security and routes protections
+  // ask about event driven approach discussed.
+  // add and incorporate self-activity logger events for all api implementations
+
