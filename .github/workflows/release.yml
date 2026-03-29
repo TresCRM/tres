@@ -2,7 +2,7 @@ name: Release (Tag)
 
 on:
   push:
-    tags: [ "v*.*.*" ]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: write
@@ -18,17 +18,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # pnpm version read from package.json "packageManager" field
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.17.1
-          run_install: false
+          cache: "pnpm"
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
@@ -60,29 +58,3 @@ jobs:
             packages/types/src/openapi.ts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # OPTIONAL: kick off image build (or depend on docker.yml also triggered by tags)
-  # images:
-  #   needs: release
-  #   uses: ./.github/workflows/docker.yml
-  #   secrets: inherit
-
-  # OPTIONAL: deploy to Staging/Prod via environments (with approvals)
-  # deploy:
-  #   name: Deploy to Staging
-  #   runs-on: ubuntu-latest
-  #   environment:
-  #     name: staging
-  #     url: https://staging.trescrm.com
-  #   steps:
-  #     - name: Deploy via Helm (example)
-  #       run: |
-  #         echo "$KUBECONFIG_CONTENT" > kubeconfig
-  #         export KUBECONFIG=$PWD/kubeconfig
-  #         helm upgrade --install tres-crm ./infrastructure/helm \
-  #           --namespace tres-staging --create-namespace \
-  #           --set image.api.tag=${{ github.ref_name }} \
-  #           --set image.web.tag=${{ github.ref_name }} \
-  #           --set image.workers.tag=${{ github.ref_name }}
-  #       env:
-  #         KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG_CONTENT_STAGING }}
