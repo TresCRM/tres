@@ -78,7 +78,7 @@ async function runOnce(now = new Date()) {
   const coming = await Subscription.find({ status:"ACTIVE" });
   for (const sub of coming) {
     const days = daysBetween(now, sub.currentPeriodEnd);
-    if ([7,3,1].includes(days)) {
+    if ([14,7,3,1].includes(days)) {
       await sendDunning("owner@trescrm.local", `Renewal in ${days} day(s)`,
         `<p>Your ${sub.planCode} renews in ${days} day(s).</p>`,
         `Renews in ${days} day(s).`,

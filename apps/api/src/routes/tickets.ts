@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z, ZodError } from "zod";
-import { requireAuth, requireRoles } from "../middlewares/auth";
+import { requireAuth, requirePermission } from "../middlewares/auth";
+import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { sanitizeUserHtml } from "../utils/sanitize";
 import { Ticket } from "../models/Ticket";
@@ -10,6 +11,8 @@ import { badRequest } from "../utils/http";
 // import { nanoid } from "nanoid";
 import { emitTicketEvent } from "../events/emitter";
 import { requireActiveSubscription } from "../middlewares/subscriptionGuard";
+import { enforceTicketLimit } from "../middlewares/freeTierGuard";
+import { Tenant } from "../models/Tenant";
 import { randomUUID } from "crypto";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { Types } from "mongoose";
@@ -204,7 +207,7 @@ registry.registerPath({
 
 // GET list with filters + cursor pagination (by createdAt desc)
 ticketsRouter.get("/", requireAuth, async (req, res) => {
-  const auth = (req as any).auth as { tid:string };
+  const auth = (req as AuthRequest).auth;
   const q = ListQuery.parse(req.query);
   const filter:any = { tenantId: asObjectId(auth.tid) };
   if (q.status) filter.status = q.status;
@@ -228,7 +231,7 @@ ticketsRouter.get("/", requireAuth, async (req, res) => {
 
 // GET single with comments
 ticketsRouter.get("/:id", requireAuth, async (req,res) => {
-  const auth = (req as any).auth as { tid:string };
+  const auth = (req as AuthRequest).auth;
   const ticket = await Ticket.findOne({ _id: asObjectId(req.params.id), tenantId: asObjectId(auth.tid) }).lean();
   if (!ticket) return res.status(404).json({ error:"not_found" });
   const comments = await Comment.find({ tenantId: asObjectId(auth.tid), ticketId: ticket._id }).sort({ createdAt:1 }).lean();
@@ -238,10 +241,11 @@ ticketsRouter.get("/:id", requireAuth, async (req,res) => {
 // POST create with Idempotency-Key
 ticketsRouter.post("/",
   requireAuth,
-  requireRoles("OWNER","ADMIN","AGENT"),
+  requirePermission("TICKET_CREATE"),
   requireActiveSubscription({ write: true }),
+  enforceTicketLimit(),
   async (req, res) => {
-    const auth = (req as any).auth as { sub:string; tid:string };
+    const auth = (req as AuthRequest).auth;
     try {
       const parsed = CreateTicketBody.safeParse(req.body);
       if (!parsed.success) {
@@ -274,6 +278,9 @@ ticketsRouter.post("/",
          requestId
        });
 
+      // Increment lifetime ticket count for free tier tracking
+      await Tenant.updateOne({ _id: asObjectId(auth.tid) }, { $inc: { lifetimeTicketCount: 1 } });
+
       void emitTicketEvent(auth.tid, { event: "ticket.created", ticketId: String(created._id) });
       try {
         await logActivity(req, { action: "ticket.created", http: 201, meta: { ticketId: String(created._id) } });
@@ -300,10 +307,10 @@ ticketsRouter.post("/",
 // reply
 ticketsRouter.post("/:id/reply",
   requireAuth,
-  requireRoles("OWNER","ADMIN","AGENT"),
+  requirePermission("COMMENT_CREATE"),
   requireActiveSubscription({ write: true }),
   async (req,res) => {
-    const auth = (req as any).auth as { sub:string; tid:string };
+    const auth = (req as AuthRequest).auth;
     const parsed = ReplyBody.safeParse(req.body);
     if (!parsed.success) {
       return await badRequest(
@@ -349,10 +356,10 @@ ticketsRouter.post("/:id/reply",
 // assign
 ticketsRouter.post("/:id/assign",
   requireAuth,
-  requireRoles("OWNER","ADMIN"),
+  requirePermission("TICKET_ASSIGN"),
   requireActiveSubscription({ write: true }),
   async (req,res) => {
-    const auth = (req as any).auth as { tid:string };
+    const auth = (req as AuthRequest).auth;
     const parsed = AssignBody.safeParse(req.body);
     if (!parsed.success) {
       return await badRequest(
@@ -382,10 +389,10 @@ ticketsRouter.post("/:id/assign",
 // close
 ticketsRouter.post("/:id/close",
   requireAuth,
-  requireRoles("OWNER","ADMIN","AGENT"),
+  requirePermission("TICKET_CLOSE"),
   requireActiveSubscription({ write: true }),
   async (req,res) => {
-    const auth = (req as any).auth as { tid:string };
+    const auth = (req as AuthRequest).auth;
     const ticket = await Ticket.findOneAndUpdate(
       { _id: asObjectId(req.params.id), tenantId: asObjectId(auth.tid) },
       { status: "CLOSED" }, { new: true }
@@ -398,6 +405,58 @@ ticketsRouter.post("/:id/close",
     } catch (error) {
       /*ignore*/
     }
+    res.json({ data: ticket });
+  }
+);
+
+// reopen
+ticketsRouter.post("/:id/reopen",
+  requireAuth,
+  requirePermission("TICKET_REOPEN"),
+  requireActiveSubscription({ write: true }),
+  async (req, res) => {
+    const auth = (req as AuthRequest).auth;
+    const ticket = await Ticket.findOne({ _id: asObjectId(req.params.id), tenantId: asObjectId(auth.tid) });
+    if (!ticket) return res.status(404).json({ error: "not_found" });
+    if (ticket.status !== "CLOSED") return res.status(400).json({ error: "invalid_status", message: "Only CLOSED tickets can be reopened" });
+    ticket.status = "REOPENED";
+    await ticket.save();
+    emitTicketEvent(auth.tid, { event: "ticket.reopened", ticketId: String(ticket._id) });
+    try { await logActivity(req, { action: "ticket.reopened", http: 200, meta: { ticketId: String(ticket._id) } }); } catch {}
+    res.json({ data: ticket });
+  }
+);
+
+// reassign with SLA reset
+ticketsRouter.post("/:id/reassign",
+  requireAuth,
+  requirePermission("TICKET_ASSIGN"),
+  requireActiveSubscription({ write: true }),
+  async (req, res) => {
+    const auth = (req as AuthRequest).auth;
+    const parsed = z.object({ assigneeId: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "invalid_request", details: parsed.error.message });
+    const { assigneeId } = parsed.data;
+
+    const ticket = await Ticket.findOne({ _id: asObjectId(req.params.id), tenantId: asObjectId(auth.tid) });
+    if (!ticket) return res.status(404).json({ error: "not_found" });
+    if (ticket.status === "CLOSED") return res.status(400).json({ error: "invalid_status", message: "Cannot reassign a CLOSED ticket" });
+
+    const now = new Date();
+    // Record assignment history
+    if (ticket.assigneeId) {
+      if (!ticket.assignmentHistory) ticket.assignmentHistory = [];
+      ticket.assignmentHistory.push({
+        assigneeId: ticket.assigneeId,
+        assignedAt: ticket.updatedAt || ticket.createdAt,
+        reassignedAt: now,
+      });
+    }
+    ticket.assigneeId = asObjectId(assigneeId);
+    await ticket.save();
+
+    emitTicketEvent(auth.tid, { event: "ticket.reassigned", ticketId: String(ticket._id), newAssigneeId: assigneeId, reassignedAt: now.toISOString() });
+    try { await logActivity(req, { action: "ticket.reassigned", http: 200, meta: { ticketId: String(ticket._id), assigneeId } }); } catch {}
     res.json({ data: ticket });
   }
 );

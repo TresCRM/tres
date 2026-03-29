@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import type { AuthRequest } from "../types/auth";
 import { ActivityLog } from "../models/ActivityLog";
 import { redactBody, redactHeaders } from "../utils/redact";
 import { asObjectId } from "../utils/auth";
@@ -15,7 +16,7 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
 
   res.on("finish", () => {
     try {
-      const auth = (req as any).auth as { tid?: string; sub?: string; roles?: string[] } || {};
+      const auth = (req as Partial<AuthRequest>).auth || {} as any;
       const ctx  = (req as any).ctx  || {};
       const durationMs = Date.now() - started;
 

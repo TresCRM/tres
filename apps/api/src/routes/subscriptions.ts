@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRoles } from "../middlewares/auth";
+import { requirePermission } from "../middlewares/auth";
+import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { Subscription } from "../models/Subscription";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
@@ -142,9 +144,9 @@ registry.registerPath({
 subscriptionsRouter.post(
   "/",
   requireAuth,
-  requireRoles("OWNER", "ADMIN", "BILLING"),
+  requirePermission("BILLING_MANAGE"),
   async (req, res) => {
-    const auth = (req as any).auth as { tid: string };
+    const auth = (req as AuthRequest).auth;
     console.log("ENTRY", 148, auth.tid);
     const Body = z.object({
       planCode: z.string(),
@@ -215,9 +217,9 @@ subscriptionsRouter.post(
 subscriptionsRouter.post(
   "/pay",
   requireAuth,
-  requireRoles("OWNER", "ADMIN", "BILLING"),
+  requirePermission("BILLING_MANAGE"),
   async (req, res) => {
-    const auth = (req as any).auth as { tid: string };
+    const auth = (req as AuthRequest).auth;
     const sub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) });
     if (!sub) return res.status(400).json({ error: "no_subscription" });
 
@@ -259,9 +261,9 @@ subscriptionsRouter.post(
 subscriptionsRouter.post(
   "/cancel",
   requireAuth,
-  requireRoles("OWNER", "ADMIN", "BILLING"),
+  requirePermission("BILLING_MANAGE"),
   async (req, res) => {
-    const auth = (req as any).auth as { tid: string };
+    const auth = (req as AuthRequest).auth;
     const sub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) });
     if (!sub) return res.status(400).json({ error: "no_subscription" });
     sub.status = "CANCELED";
@@ -273,7 +275,7 @@ subscriptionsRouter.post(
 
 // Me
 subscriptionsRouter.get("/me", requireAuth, async (req, res) => {
-  const auth = (req as any).auth as { tid: string };
+  const auth = (req as AuthRequest).auth;
   const sub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) }).lean();
   res.json({ data: sub });
 });

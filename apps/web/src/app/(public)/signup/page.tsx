@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { Formik, Form } from 'formik';
 import { z } from 'zod';
 import { zodToFormikValidate } from '@/lib/zodFormik';
@@ -66,7 +66,7 @@ const signupPayloadSchema = z.object({
 --------------------------------------------- */
 type Step = 1|2|3|4;
 
-export default function SignupWizard() {
+function SignupWizardInner() {
   const online = useNetwork();
   const sp = useSearchParams();
   const router = useRouter();
@@ -366,4 +366,8 @@ export default function SignupWizard() {
       </Modal>
     </section>
   );
+}
+
+export default function SignupWizard() {
+  return <Suspense fallback={<div className="flex justify-center py-16"><div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-blue-600 rounded-full" /></div>}><SignupWizardInner /></Suspense>;
 }

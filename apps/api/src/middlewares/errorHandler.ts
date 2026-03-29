@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import type { AuthRequest } from "../types/auth";
 import { ZodError } from "zod";
 import { ErrorLog } from "../models/ErrorLog";
 import { ERR } from "../constants/errors";
@@ -7,7 +8,7 @@ import { asObjectId } from "../utils/auth";
 import { MongoServerError } from "mongodb";
 
 export function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
-  const auth = (req as any).auth as { tid?: string; sub?: string; roles?: string[] } || {};
+  const auth = (req as Partial<AuthRequest>).auth || {} as any;
   const ctx  = (req as any).ctx  || {};
   const route = req.originalUrl ? req.originalUrl: (req.route?.path ? `${req.baseUrl}${req.route.path}` : req.originalUrl);
 

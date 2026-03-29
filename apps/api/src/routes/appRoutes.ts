@@ -2,10 +2,21 @@ import { Express } from "express";
 import { emailsRouter } from "./emails";
 import { surveysRouter } from "./surveys";
 import { publicSurveysRouter } from "./public.surveys";
+import { publicTicketsRouter } from "./public.tickets";
 import { subscriptionsRouter } from "./subscriptions";
 import { authRouter } from "./auth";
 import { ticketsRouter } from "./tickets";
+import { customersRouter } from "./customers";
 import { logsRouter } from "./logs";
+import { usersRouter } from "./users";
+import { settingsRouter } from "./settings";
+import { addonsRouter } from "./addons";
+import { attachmentsRouter } from "./attachments";
+import { apikeysRouter } from "./apikeys";
+import { webhooksRouter } from "./webhooks";
+import { extRouter } from "./ext";
+import { widgetSettingsRouter } from "./widgetSettings";
+import { publicWidgetRouter } from "./public.widget";
 import { authLimiter } from "../middlewares/security";
 
 export function mountRoutes(app: Express) {
@@ -13,8 +24,19 @@ export function mountRoutes(app: Express) {
   app.use("/api/v1/auth", authLimiter, authRouter);
   app.use("/api/v1/subscriptions", subscriptionsRouter);
   app.use("/api/v1/tickets", ticketsRouter);
+  app.use("/api/v1/customers", customersRouter);
   app.use("/api/v1/logs", logsRouter);
+  app.use("/api/v1/users", usersRouter);
   app.use("/api/v1/emails", emailsRouter);
   app.use("/api/v1/surveys", surveysRouter);
+  app.use("/api/v1/settings", settingsRouter);
+  app.use("/api/v1/settings", widgetSettingsRouter);
+  app.use("/api/v1/add-ons", addonsRouter);
+  app.use("/api/v1", attachmentsRouter);
+  app.use("/api/v1/api-keys", apikeysRouter);
+  app.use("/api/v1/webhooks", webhooksRouter);
+  app.use("/api/v1/ext", extRouter);
   app.use("/public", publicSurveysRouter);
+  app.use("/public", publicTicketsRouter);
+  app.use("/public", publicWidgetRouter);
 }

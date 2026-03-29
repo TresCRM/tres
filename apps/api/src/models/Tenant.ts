@@ -12,9 +12,10 @@ export interface TenantDoc {
   _id: Types.ObjectId;
   slug: string;                // human friendly id
   branding: Branding;
-  plan: "INDIVIDUAL" | "COMPANY";
+  plan: "FREE" | "INDIVIDUAL" | "COMPANY";
   seats: number;               // for COMPANY plans
   isActive: boolean;
+  lifetimeTicketCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,9 +31,10 @@ const BrandingSchema = new Schema<Branding>({
 const TenantSchema = new Schema<TenantDoc>({
   slug: { type: String, required: true, unique: true, index: true },
   branding: { type: BrandingSchema, required: true },
-  plan: { type: String, enum: ["INDIVIDUAL", "COMPANY"], required: true },
+  plan: { type: String, enum: ["FREE", "INDIVIDUAL", "COMPANY"], required: true },
   seats: { type: Number, default: 1 },
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  lifetimeTicketCount: { type: Number, default: 0 }
 }, { timestamps: true });
 
 export const Tenant = mongoose.model<TenantDoc>("Tenant", TenantSchema);
