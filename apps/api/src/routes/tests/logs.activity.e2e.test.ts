@@ -31,9 +31,13 @@ test("activity log is written on ticket create", async () => {
     .send({ subject:"Login broken", body:"help" })
     .expect(201);
 
-  const rows = await ActivityLog.find({ tenantId }).lean();
+  // Audit middleware writes via setImmediate (fire-and-forget).
+  // Wait briefly for the async write to complete before querying.
+  await new Promise(r => setTimeout(r, 500));
+
+  const rows = await ActivityLog.find({ tenantId }).sort({ _id: -1 }).lean();
   expect(rows.length).toBeGreaterThan(0);
-  const latest = rows[rows.length - 1];
+  const latest = rows[0];
   expect(latest.method).toBe("POST");
   expect(String(latest.tenantId)).toBe(tenantId);
   expect(latest.route).toContain("/api/v1/tickets");

@@ -17,6 +17,9 @@ claude/
 .claude/
 _ssh/
 
+# User uploads (generated at runtime)
+uploads/
+
 # Build output
 dist/
 build/
