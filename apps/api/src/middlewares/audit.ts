@@ -13,6 +13,8 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
   const started = Date.now();
   const method = req.method.toUpperCase();
   const idempo = (req.headers["idempotency-key"] as string) || undefined;
+  // Capture URL eagerly -- req.route may be undefined inside res.on("finish") in Express 5
+  const capturedUrl = req.originalUrl || req.url || req.baseUrl || "";
 
   res.on("finish", () => {
     try {
@@ -32,7 +34,7 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
         actorId,
         roles: auth?.roles || [],
         method,
-        route: req.route?.path ? `${req.baseUrl}${req.route.path}` : req.originalUrl,
+        route: capturedUrl,
         status: res.statusCode,
         durationMs,
         requestId: ctx.requestId,
