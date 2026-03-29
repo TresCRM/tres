@@ -3,7 +3,6 @@ import * as jwt from "jsonwebtoken";
 import { testSetup, testTeardown } from "../../tests/helpers";
 import { Tenant } from "../../models/Tenant";
 import { User } from "../../models/User";
-// import { Subscription } from "../../models/Subscription";
 import { hashPassword } from "../../utils/auth";
 import { ActivityLog } from "../../models/ActivityLog";
 import { seedActiveSubscription } from "../../tests/helpers";
@@ -25,19 +24,25 @@ beforeAll(async () => {
 
 afterAll(async () => { await testTeardown(); });
 
+/** Poll until a matching activity log appears (audit middleware writes via setImmediate). */
+async function waitForActivityLog(filter: Record<string, any>, timeoutMs = 5000): Promise<any> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const rows = await ActivityLog.find(filter).sort({ _id: -1 }).lean();
+    if (rows.length > 0) return rows[0];
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return null;
+}
+
 test("activity log is written on ticket create", async () => {
   await request(app).post("/api/v1/tickets")
     .set("Authorization", `Bearer ${token}`)
     .send({ subject:"Login broken", body:"help" })
     .expect(201);
 
-  // Audit middleware writes via setImmediate (fire-and-forget).
-  // Wait briefly for the async write to complete before querying.
-  await new Promise(r => setTimeout(r, 500));
-
-  const rows = await ActivityLog.find({ tenantId }).sort({ _id: -1 }).lean();
-  expect(rows.length).toBeGreaterThan(0);
-  const latest = rows[0];
+  const latest = await waitForActivityLog({ tenantId, method: "POST" });
+  expect(latest).not.toBeNull();
   expect(latest.method).toBe("POST");
   expect(String(latest.tenantId)).toBe(tenantId);
   expect(latest.route).toContain("/api/v1/tickets");
