@@ -1,18 +1,17 @@
-name: Docker (Build • Push)
+name: Docker (Build + Push)
 
 on:
   push:
-    branches: [ "main" ]
-    tags: [ "v*.*.*" ]
+    branches: ["main"]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: read
-  packages: write    # required to push to GHCR
-  id-token: write    # for future OIDC integrations
+  packages: write
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
-  # Will be resolved to lowercase later for safety
   IMAGE_NAMESPACE: ${{ github.repository }}
 
 jobs:
@@ -25,13 +24,13 @@ jobs:
       matrix:
         include:
           - app: api
-            context: ./apps/api
-            dockerfile: ./apps/api/Dockerfile
+            context: .
+            dockerfile: ./Dockerfile
           - app: web
             context: ./apps/web
             dockerfile: ./apps/web/Dockerfile
           - app: workers
-            context: ./apps/workers
+            context: .
             dockerfile: ./apps/workers/Dockerfile
 
     steps:
@@ -55,7 +54,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata (tags/labels)
+      - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -64,8 +63,6 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha
-          labels: |
-            org.opencontainers.image.source=${{ github.repository }}
 
       - name: Build & Push
         uses: docker/build-push-action@v6
@@ -78,18 +75,3 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # OPTIONAL: sign images with cosign (supply COSIGN_KEY or use keyless)
-      # - name: Cosign sign
-      #   if: github.ref_name == 'main' || github.ref_type == 'tag'
-      #   uses: sigstore/cosign-installer@v3
-      # - run: cosign sign --yes ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}-${{ matrix.app }}@${{ steps.meta.outputs.digest }}
-
-    # OPTIONAL: sample services (enable if your build/tests need them)
-    # services:
-    #   nats:
-    #     image: nats:2
-    #     ports: [ "4222:4222" ]
-    #   mongo:
-    #     image: mongo:7
-    #     ports: [ "27017:27017" ]

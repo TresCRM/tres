@@ -1,0 +1,16 @@
+{
+  "name": "@tres-crm/widget",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embeddable support widget for TRES CRM",
+  "main": "dist/tres-widget.js",
+  "module": "dist/tres-widget.mjs",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {}
+}

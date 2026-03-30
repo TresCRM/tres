@@ -22,6 +22,7 @@ export interface SubscriptionDoc {
   provider: "manual" | string;
   lastPaymentAt: Date | null;
   failedPaymentCount: number;
+  autoRenew: boolean;
   entitlements: Entitlements;
   createdAt: Date; 
   updatedAt: Date;
@@ -48,6 +49,7 @@ const SubscriptionSchema = new Schema<SubscriptionDoc>({
   provider: { type: String, default: "manual" },
   lastPaymentAt: { type: Date, default: null },
   failedPaymentCount: { type: Number, default: 0 },
+  autoRenew: { type: Boolean, default: true },
 
   // entitlements snapshot for fast checks
   entitlements: { type: Schema.Types.Mixed, default: {} },

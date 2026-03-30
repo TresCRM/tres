@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireRoles } from "../middlewares/auth";
+import { requirePermission } from "../middlewares/auth";
+import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { ActivityLog } from "../models/ActivityLog";
 import { ErrorLog } from "../models/ErrorLog";
@@ -21,8 +23,8 @@ const ListQuery = z.object({
   cursor: z.string().optional(), // _id cursor
 });
 
-logsRouter.get("/activity", requireAuth, requireRoles("OWNER","ADMIN"), async (req, res) => {
-  const auth = (req as any).auth as { tid: string };
+logsRouter.get("/activity", requireAuth, requirePermission("LOG_READ"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
   const q = ListQuery.parse(req.query);
   const filter: any = { tenantId: asObjectId(auth.tid) };
   if (q.route) filter.route = q.route;
@@ -35,8 +37,8 @@ logsRouter.get("/activity", requireAuth, requireRoles("OWNER","ADMIN"), async (r
   res.json({ data: rows, nextCursor });
 });
 
-logsRouter.get("/errors", requireAuth, requireRoles("OWNER","ADMIN"), async (req, res) => {
-  const auth = (req as any).auth as { tid: string };
+logsRouter.get("/errors", requireAuth, requirePermission("LOG_READ"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
   const q = ListQuery.parse(req.query);
   const filter: any = { tenantId: asObjectId(auth.tid) };
   if (q.route) filter.route = q.route;

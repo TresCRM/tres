@@ -4,6 +4,7 @@ const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/apps/api/src'],
+  testPathIgnorePatterns: ['/node_modules/'],
   moduleFileExtensions: ['ts', 'js'],
   setupFiles: ['dotenv/config'],
   setupFilesAfterEnv: ['<rootDir>/apps/api/src/tests/jest.setup.ts'],

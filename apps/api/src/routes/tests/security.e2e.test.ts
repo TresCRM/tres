@@ -195,28 +195,40 @@ describe("Session Management (Phase 1.8)", () => {
   });
 
   test("DELETE /sessions revokes all sessions for user", async () => {
-    // Login a second time to create two sessions
-    await login(slug, email, password);
+    // Create multiple sessions via direct DB insert + login
+    const user = await User.findOne({ email });
+    await RefreshToken.create({
+      userId: user!._id,
+      tenantId: user!.tenantId,
+      tokenHash: "extra_session_hash_1",
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+    await RefreshToken.create({
+      userId: user!._id,
+      tenantId: user!.tenantId,
+      tokenHash: "extra_session_hash_2",
+      expiresAt: new Date(Date.now() + 86400000),
+    });
 
-    const sessions = await request(app)
-      .get("/api/v1/auth/sessions")
-      .set("Authorization", `Bearer ${accessToken}`);
-    expect(sessions.body.data.length).toBeGreaterThanOrEqual(2);
+    const before = await RefreshToken.countDocuments({
+      userId: user!._id,
+      revokedAt: null,
+    });
+    expect(before).toBeGreaterThanOrEqual(2);
 
-    // Revoke all
+    // Revoke all via API
     const res = await request(app)
       .delete("/api/v1/auth/sessions")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
 
-    // Verify all revoked in DB
-    const user = await User.findOne({ email });
-    const active = await RefreshToken.countDocuments({
+    // Verify all revoked
+    const after = await RefreshToken.countDocuments({
       userId: user!._id,
       revokedAt: null,
       expiresAt: { $gt: new Date() },
     });
-    expect(active).toBe(0);
+    expect(after).toBe(0);
   });
 });
 

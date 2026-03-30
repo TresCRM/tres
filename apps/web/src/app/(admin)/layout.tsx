@@ -1,5 +1,6 @@
 'use client';
 import { useThemeMode } from '@/app/providers';
+import AuthGuard from '@/components/guards/AuthGuard';
 import Link from 'next/link';
 
 const nav = [
@@ -14,20 +15,22 @@ const nav = [
 export default function ConsoleLayout({children}:{children:React.ReactNode}) {
   const { theme, setTheme } = useThemeMode();
   return (
-    <div className="grid min-h-screen grid-cols-[240px_1fr]">
-      <aside className="border-r p-3">
-        <div className="font-bold mb-4">TRES Admin</div>
-        <nav className="flex flex-col gap-1">
-          {nav.map(i => <Link key={i.href} className="px-3 py-2 rounded hover:bg-gray-100" href={i.href}>{i.label}</Link>)}
-        </nav>
-      </aside>
-      <section>
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b flex items-center justify-between px-4 h-12">
-          <div />
-          <button className="text-sm" onClick={()=>setTheme(theme==='light'?'dark':'light')}>Toggle {theme}</button>
-        </header>
-        <main className="p-4">{children}</main>
-      </section>
-    </div>
+    <AuthGuard>
+      <div className="grid min-h-screen grid-cols-[240px_1fr]">
+        <aside className="border-r p-3">
+          <div className="font-bold mb-4">TRES Admin</div>
+          <nav className="flex flex-col gap-1">
+            {nav.map(i => <Link key={i.href} className="px-3 py-2 rounded hover:bg-gray-100" href={i.href}>{i.label}</Link>)}
+          </nav>
+        </aside>
+        <section>
+          <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b flex items-center justify-between px-4 h-12">
+            <div />
+            <button className="text-sm" onClick={()=>setTheme(theme==='light'?'dark':'light')}>Toggle {theme}</button>
+          </header>
+          <main className="p-4">{children}</main>
+        </section>
+      </div>
+    </AuthGuard>
   );
 }

@@ -9,6 +9,7 @@ export interface TicketDoc {
   createdBy: Types.ObjectId; createdAt: Date; updatedAt: Date;
   requestId?: string;            
   watchers?: string[];
+  assignmentHistory?: { assigneeId: Types.ObjectId; assignedAt: Date; reassignedAt?: Date }[];
 }
 const TicketSchema = new Schema<TicketDoc>({
   tenantId: { type: Schema.Types.ObjectId, ref:"Tenant", required: true },
@@ -19,7 +20,8 @@ const TicketSchema = new Schema<TicketDoc>({
   customerEmail: String, tags: [String],
   createdBy: { type: Schema.Types.ObjectId, ref:"User", required:true },
   requestId: { type: String, index: true, default: undefined },
-  watchers: [String]
+  watchers: [String],
+  assignmentHistory: { type: [{ assigneeId: Schema.Types.ObjectId, assignedAt: Date, reassignedAt: Date }], default: [] },
 }, { timestamps: true });
 
 TicketSchema.index({ createdAt: -1 });

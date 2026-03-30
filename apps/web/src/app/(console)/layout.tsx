@@ -1,6 +1,7 @@
 'use client';
 import { useThemeMode } from '@/app/providers';
 import Link from 'next/link';
+import AuthGuard from '@/components/guards/AuthGuard';
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: 'home' },
@@ -14,6 +15,7 @@ const nav = [
 export default function ConsoleLayout({children}:{children:React.ReactNode}) {
   const { theme, setTheme } = useThemeMode();
   return (
+    <AuthGuard>
     <div className="grid min-h-screen grid-cols-[240px_1fr]">
       <aside className="border-r p-3">
         <div className="font-bold mb-4">TRES Console</div>
@@ -29,5 +31,6 @@ export default function ConsoleLayout({children}:{children:React.ReactNode}) {
         <main className="p-4">{children}</main>
       </section>
     </div>
+    </AuthGuard>
   );
 }

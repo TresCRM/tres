@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { AuthRequest } from "../types/auth";
 import crypto from "crypto";
 import { Tenant } from "../models/Tenant";
 import { User } from "../models/User";
@@ -47,7 +48,7 @@ authRouter.post("/signup", async (req, res) => {
       lastName: owner.lastName,
       email: owner.email.toLowerCase(),
       passwordHash,
-      roles: ["OWNER", "ADMIN", "AGENT", "BILLING"],
+      roles: ["OWNER"],
       status: "PENDING",
       emailVerification: {
         token,
@@ -201,7 +202,7 @@ authRouter.post("/refresh", async (req, res) => {
 
 /** GET /api/v1/auth/me */
 authRouter.get("/me", requireAuth, async (req, res) => {
-  const auth = (req as any).auth as { sub:string; tid:string; roles:string[] };
+  const auth = (req as AuthRequest).auth;
   return res.json(auth);
 });
 
@@ -230,7 +231,7 @@ authRouter.get('/cookie-me', (req, res) => {
 
 /** GET /api/v1/auth/sessions -- list active sessions for current user */
 authRouter.get("/sessions", requireAuth, async (req, res) => {
-  const auth = (req as any).auth as { sub: string };
+  const auth = (req as AuthRequest).auth;
   const sessions = await RefreshToken.find({ userId: asObjectId(auth.sub), revokedAt: null, expiresAt: { $gt: new Date() } })
     .select("deviceInfo ip createdAt expiresAt")
     .sort({ createdAt: -1 })
@@ -240,7 +241,7 @@ authRouter.get("/sessions", requireAuth, async (req, res) => {
 
 /** DELETE /api/v1/auth/sessions/:id -- revoke a specific session */
 authRouter.delete("/sessions/:id", requireAuth, async (req, res) => {
-  const auth = (req as any).auth as { sub: string };
+  const auth = (req as AuthRequest).auth;
   const result = await RefreshToken.updateOne(
     { _id: req.params.id, userId: asObjectId(auth.sub), revokedAt: null },
     { revokedAt: new Date() }
@@ -251,7 +252,7 @@ authRouter.delete("/sessions/:id", requireAuth, async (req, res) => {
 
 /** DELETE /api/v1/auth/sessions -- revoke all sessions (log out everywhere) */
 authRouter.delete("/sessions", requireAuth, async (req, res) => {
-  const auth = (req as any).auth as { sub: string };
+  const auth = (req as AuthRequest).auth;
   await RefreshToken.updateMany({ userId: asObjectId(auth.sub), revokedAt: null }, { revokedAt: new Date() });
   clearAuthCookies(res);
   return res.json({ ok: true });

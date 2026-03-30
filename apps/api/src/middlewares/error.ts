@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import type { AuthRequest } from "../types/auth";
 import { AppError } from "../utils/errors";
 import { writeActivity } from "../services/activity";
 
@@ -13,7 +14,7 @@ export async function errorHandler(err: any, req: Request, res: Response, _next:
 
   // store activity log (error)
   try {
-    const auth = (req as any).auth;
+    const auth = (req as Partial<AuthRequest>).auth;
     await writeActivity({
       tenantId: auth?.tid, 
       userId: auth?.sub,

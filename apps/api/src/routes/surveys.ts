@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
 import * as jwt from "jsonwebtoken";
-import { requireAuth, requireRoles } from "../middlewares/auth";
+import { requireAuth, requirePermission } from "../middlewares/auth";
+import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { Survey } from "../models/Survey";
 import { SurveyInvite } from "../models/SurveyInvite";
+import { SurveyResponse } from "../models/SurveyResponse";
 import { registry } from "../docs/swagger";
 import { EmailTemplate } from "../models/EmailTemplate";
 import { renderVars } from "../utils/render";
@@ -105,8 +107,8 @@ export const surveysRouter = Router();
 
 
 // Create/update survey template
-surveysRouter.post("/", requireAuth, requireRoles("OWNER","ADMIN"), async (req, res) => {
-  const auth = (req as any).auth as { tid: string };
+surveysRouter.post("/", requireAuth, requirePermission("SURVEY_CREATE"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
   const b = SurveyBody.parse(req.body);
   const s = await Survey.findOneAndUpdate(
     { tenantId: asObjectId(auth.tid), key: b.key },
@@ -117,8 +119,8 @@ surveysRouter.post("/", requireAuth, requireRoles("OWNER","ADMIN"), async (req, 
 });
 
 // Send invite for ticket (returns inviteUrl for convenience)
-surveysRouter.post("/:id/send", requireAuth, requireRoles("OWNER","ADMIN","AGENT"), async (req, res) => {
-  const auth = (req as any).auth as { tid: string };
+surveysRouter.post("/:id/send", requireAuth, requirePermission("SURVEY_SEND"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
   const schema = z.object({
     ticketId: z.string(),
     customerEmail: z.email(),
@@ -163,4 +165,62 @@ surveysRouter.post("/:id/send", requireAuth, requireRoles("OWNER","ADMIN","AGENT
   await sendEmail({ to: customerEmail, subject: emailSubject, html, text, messageKey: `survey_${invite._id}` });
 
   res.status(201).json({ data: { inviteId: String(invite._id), inviteUrl } });
+});
+
+// GET survey responses with pagination
+surveysRouter.get("/:id/responses", requireAuth, requirePermission("SURVEY_READ"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const cursor = req.query.cursor as string | undefined;
+
+  const filter: any = { tenantId: asObjectId(auth.tid), surveyId: asObjectId(req.params.id) };
+  if (cursor) filter._id = { $lt: asObjectId(cursor) };
+
+  const responses = await SurveyResponse.find(filter).sort({ _id: -1 }).limit(limit).lean();
+  const nextCursor = responses.length === limit ? String(responses[responses.length - 1]._id) : undefined;
+  res.json({ data: responses, nextCursor });
+});
+
+// GET survey analytics (aggregated scores)
+surveysRouter.get("/:id/analytics", requireAuth, requirePermission("SURVEY_READ"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
+  const surveyId = asObjectId(req.params.id);
+  const tenantId = asObjectId(auth.tid);
+
+  const [stats] = await SurveyResponse.aggregate([
+    { $match: { tenantId, surveyId } },
+    { $group: {
+      _id: null,
+      totalResponses: { $sum: 1 },
+      avgScore: { $avg: "$overallScore" },
+      minScore: { $min: "$overallScore" },
+      maxScore: { $max: "$overallScore" },
+    }},
+  ]);
+
+  // NPS calculation: count promoters (9-10), passives (7-8), detractors (0-6)
+  const npsData = await SurveyResponse.aggregate([
+    { $match: { tenantId, surveyId, overallScore: { $ne: null } } },
+    { $group: {
+      _id: null,
+      promoters: { $sum: { $cond: [{ $gte: ["$overallScore", 9] }, 1, 0] } },
+      passives: { $sum: { $cond: [{ $and: [{ $gte: ["$overallScore", 7] }, { $lt: ["$overallScore", 9] }] }, 1, 0] } },
+      detractors: { $sum: { $cond: [{ $lt: ["$overallScore", 7] }, 1, 0] } },
+      total: { $sum: 1 },
+    }},
+  ]);
+
+  const nps = npsData[0]
+    ? Math.round(((npsData[0].promoters - npsData[0].detractors) / npsData[0].total) * 100)
+    : null;
+
+  res.json({
+    data: {
+      totalResponses: stats?.totalResponses || 0,
+      avgScore: stats?.avgScore ? Math.round(stats.avgScore * 100) / 100 : null,
+      minScore: stats?.minScore ?? null,
+      maxScore: stats?.maxScore ?? null,
+      nps,
+    },
+  });
 });

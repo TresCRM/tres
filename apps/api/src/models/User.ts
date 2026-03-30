@@ -1,6 +1,9 @@
 import mongoose, { Schema, Types } from "mongoose";
 
-export type Role = "OWNER"|"ADMIN"|"AGENT"|"BILLING"|"SUPER"|"SPECIAL";
+export type { Role } from "../../../../packages/types/src/roles";
+import type { Role } from "../../../../packages/types/src/roles";
+import { ROLES } from "../../../../packages/types/src/roles";
+
 export type UserStatus = "PENDING" | "ACTIVE" | "DISABLED";
 
 export interface UserDoc { 

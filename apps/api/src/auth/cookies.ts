@@ -8,7 +8,7 @@ const SAME_SITE = ENV.COOKIE_SAMESITE;
 export function setAuthCookies(res: Response, args: {
   accessToken: string;
   refreshToken: string;
-  role: 'ADMIN'|'OWNER'|'AGENT'|'BILLING'|'SUPER'|'SPECIAL'|'READONLY'|'INTEGRATION';
+  role: string;
 }) {
   res.cookie('tc_session', args.accessToken, {
     httpOnly: true,

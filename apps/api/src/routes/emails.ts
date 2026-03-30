@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { any, z } from "zod";
 import { requireAuth, requireRoles } from "../middlewares/auth";
+import { requirePermission } from "../middlewares/auth";
+import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { EmailTemplate } from "../models/EmailTemplate";
 import { EmailMessage } from "../models/EmailMessage";
@@ -21,8 +23,8 @@ const TemplateBody = z.object({
   isActive: z.boolean().optional()
 });
 
-emailsRouter.post("/templates", requireAuth, requireRoles("OWNER","ADMIN"), async (req,res) => {
-  const auth = (req as any).auth as { tid: string };
+emailsRouter.post("/templates", requireAuth, requirePermission("EMAIL_TEMPLATE_MANAGE"), async (req,res) => {
+  const auth = (req as AuthRequest).auth;
   const b = TemplateBody.parse(req.body);
   const doc = await EmailTemplate.findOneAndUpdate(
     { tenantId: asObjectId(auth.tid), key: b.key },
@@ -32,8 +34,8 @@ emailsRouter.post("/templates", requireAuth, requireRoles("OWNER","ADMIN"), asyn
   res.status(201).json({ data: doc });
 });
 
-emailsRouter.post("/send", requireAuth, requireRoles("OWNER","ADMIN","AGENT"), async (req,res) => {
-  const auth = (req as any).auth as { tid: string };
+emailsRouter.post("/send", requireAuth, requirePermission("EMAIL_SEND"), async (req,res) => {
+  const auth = (req as AuthRequest).auth;
   const schema = z.object({
     to: z.union([z.string(), z.array(z.email())]),
     templateKey: z.string(),
