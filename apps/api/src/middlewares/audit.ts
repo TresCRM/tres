@@ -4,11 +4,10 @@ import { ActivityLog } from "../models/ActivityLog";
 import { redactBody, redactHeaders } from "../utils/redact";
 import { asObjectId } from "../utils/auth";
 
-const enabled = process.env.ACTIVITY_LOG_ENABLED === "1";
-const persistBody = process.env.ACTIVITY_LOG_BODY === "1";
-
 export function auditMiddleware(req: Request, res: Response, next: NextFunction) {
-  if (!enabled) return next();
+  // Read dynamically so tests can toggle via process.env at runtime
+  if (process.env.ACTIVITY_LOG_ENABLED !== "1") return next();
+  const persistBody = process.env.ACTIVITY_LOG_BODY === "1";
 
   const started = Date.now();
   const method = req.method.toUpperCase();
