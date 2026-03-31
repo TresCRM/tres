@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useThemeMode } from '@/app/providers';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/lib/apiClient';
@@ -49,9 +50,8 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
   const sidebar = (
     <nav className="flex flex-col gap-0.5 p-3" aria-label="Main navigation">
-      <Link href="/dashboard" className="flex items-center gap-2.5 px-3 mb-5">
-        <div className="w-8 h-8 bg-[var(--brand-primary,#4F46E5)] rounded-lg flex items-center justify-center text-white font-bold text-sm">T</div>
-        <span className="font-bold text-lg">TRES CRM</span>
+      <Link href="/dashboard" className="flex items-center gap-1 px-3 mb-5">
+        <Image src="/logo-sm.png" alt="TRES CRM" width={73} height={40} />
       </Link>
       {nav.map(i => (
         <Link key={i.href} href={i.href} className={linkClass(i.href)} onClick={() => setSidebarOpen(false)}>

@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { BookOpen, Mail, DollarSign } from 'lucide-react';
 
@@ -6,9 +7,8 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-[var(--brand-primary,#4F46E5)] rounded-lg flex items-center justify-center text-white font-bold text-sm">T</div>
-            <span className="font-bold text-lg tracking-tight">TRES CRM</span>
+          <Link href="/" className="flex items-center gap-1">
+            <Image src="/logo-sm.png" alt="TRES CRM" width={73} height={40} priority />
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600" aria-label="Main navigation">
             <Link href="/pricing" className="flex items-center gap-1.5 hover:text-gray-900 transition-colors">

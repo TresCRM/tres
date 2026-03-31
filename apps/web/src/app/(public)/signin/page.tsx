@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { authApi } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/authStore';
+import Image from 'next/image';
 import { LogIn, Building2, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 
 const schema = z.object({
@@ -165,9 +166,7 @@ function SignInForm() {
     <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-[var(--brand-primary,#4F46E5)] rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <LogIn size={26} className="text-white" />
-          </div>
+          <Image src="/icon-192.png" alt="TRES CRM" width={56} height={56} className="mx-auto mb-4 rounded-2xl" priority />
           <h1 className="text-2xl font-bold">Welcome back</h1>
           <p className="text-gray-500 text-sm mt-1">Sign in to your TRES CRM workspace</p>
         </div>

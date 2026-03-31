@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { Formik, Form } from 'formik';
 import { z } from 'zod';
 import { zodToFormikValidate } from '@/lib/zodFormik';
@@ -241,7 +242,7 @@ function SignupWizardInner() {
 
       {/* Header */}
       <div className="text-center">
-        <div className="w-14 h-14 bg-[var(--brand-primary,#4F46E5)] rounded-2xl flex items-center justify-center mx-auto mb-4 text-white font-bold text-lg">T</div>
+        <Image src="/icon-192.png" alt="TRES CRM" width={56} height={56} className="mx-auto mb-4 rounded-2xl" priority />
         <h1 className="text-2xl font-bold">Create your workspace</h1>
         <p className="text-gray-500 text-sm mt-1">Set up your TRES CRM account in minutes</p>
       </div>
