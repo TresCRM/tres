@@ -53,7 +53,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           <div className="flex items-center gap-3">
             <Link
               href="/signin"
-              className={`hidden sm:inline-flex px-4 py-2 text-sm font-medium rounded-lg border min-h-[40px] items-center transition-colors ${
+              className={`inline-flex px-4 py-2 text-sm font-medium rounded-lg border min-h-[40px] items-center transition-colors ${
                 isActive('/signin')
                   ? 'border-[var(--brand-primary,#4F46E5)] text-[var(--brand-primary,#4F46E5)] bg-indigo-50'
                   : 'border-gray-300 hover:bg-gray-50'
