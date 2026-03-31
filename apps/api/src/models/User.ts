@@ -63,4 +63,8 @@ const UserSchema = new Schema<UserDoc>({
 
 UserSchema.index({ tenantId: 1, email: 1 }, { unique: true });
 
+// PII field-level encryption at rest (activated when FIELD_ENCRYPTION_KEY is set)
+import { fieldEncryptionPlugin } from "../utils/fieldEncryption";
+UserSchema.plugin(fieldEncryptionPlugin, { fields: ["firstName", "lastName"] });
+
 export const User = mongoose.model<UserDoc>("User", UserSchema);

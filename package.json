@@ -31,6 +31,8 @@
     "coverage": "cross-env EMAILS_DISABLED=1 DISABLE_RATE_LIMIT=1 jest --coverage --coverageReporters=text-summary,lcov",
     "test:cov": "cross-env EMAILS_DISABLED=1 DISABLE_RATE_LIMIT=1 jest --coverage",
     "coverage:open": "start \"\" coverage/lcov-report/index.html",
+    "audit:security": "pnpm audit --prod --audit-level=high",
+    "audit:full": "pnpm audit",
     "docs:gen": "ts-node apps/api/src/docs/generate.ts",
     "docs:types": "openapi-typescript apps/api/openapi.json -o packages/types/src/openapi.ts",
     "dev:workers": "nodemon -w apps/workers/src -e ts,json -x \"ts-node apps/workers/src/index.ts\"",

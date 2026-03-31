@@ -21,4 +21,8 @@ const CustomerSchema = new Schema<CustomerDoc>({
 
 CustomerSchema.index({ tenantId: 1, email: 1 }, { unique: true });
 
+// PII field-level encryption at rest (activated when FIELD_ENCRYPTION_KEY is set)
+import { fieldEncryptionPlugin } from "../utils/fieldEncryption";
+CustomerSchema.plugin(fieldEncryptionPlugin, { fields: ["name", "phone"] });
+
 export const Customer = mongoose.model<CustomerDoc>("Customer", CustomerSchema);

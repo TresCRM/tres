@@ -16,6 +16,8 @@ import {
   hasAllPermissions,
   isValidRole,
 } from "../../../../packages/types/src/roles";
+import { User } from "../models/User";
+import { asObjectId } from "../utils/auth";
 
 /**
  * Verify JWT token and attach `req.auth` with typed payload.
@@ -86,4 +88,35 @@ export function requirePermission(...permissions: Permission[]) {
     }
     next();
   };
+}
+
+const PRIVILEGED_ROLES: Role[] = ["OWNER", "ADMIN"];
+const MFA_EXEMPT_PATHS = ["/api/v1/mfa", "/api/v1/auth", "/api/v1/gdpr", "/healthz"];
+
+/**
+ * Block OWNER/ADMIN users who have not enabled MFA from accessing protected routes.
+ * Exempt: auth, MFA setup, GDPR, and health endpoints.
+ */
+export function requireMfaForPrivileged(req: Request, res: Response, next: NextFunction) {
+  const auth = (req as any).auth as AuthPayload | undefined;
+  if (!auth) return next(); // not authenticated yet — let requireAuth handle it
+
+  const isPrivileged = auth.roles.some(r => PRIVILEGED_ROLES.includes(r));
+  if (!isPrivileged) return next(); // non-privileged roles skip MFA check
+
+  const isExempt = MFA_EXEMPT_PATHS.some(p => req.originalUrl.startsWith(p));
+  if (isExempt) return next();
+
+  // Check DB for MFA status (cached per-request via req)
+  const cached = (req as any)._mfaChecked;
+  if (cached !== undefined) return cached ? next() : res.status(403).json({ error: "mfa_required", message: "MFA must be enabled for admin accounts." });
+
+  User.findById(asObjectId(auth.sub)).select("mfa.enabled").lean()
+    .then(user => {
+      const mfaOk = !!user?.mfa?.enabled;
+      (req as any)._mfaChecked = mfaOk;
+      if (!mfaOk) return res.status(403).json({ error: "mfa_required", message: "MFA must be enabled for admin accounts." });
+      next();
+    })
+    .catch(() => next()); // on DB error, fail open to avoid locking users out
 }
