@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { AuthRequest } from "../types/auth";
 import crypto, { timingSafeEqual } from "crypto";
+import { verifyTOTP } from "../utils/totp";
 import { Tenant } from "../models/Tenant";
 import { User } from "../models/User";
 import { hashPassword, verifyPassword, signAccessToken, signRefreshToken, hashToken, verifyRefreshToken, asObjectId } from "../utils/auth";
@@ -14,7 +15,16 @@ import { requireAuth } from "../middlewares/auth";
 import { registry } from "../docs/swagger";
 import { z } from "zod";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
+import { logSecurityEvent } from "../services/securityLogger";
 extendZodWithOpenApi(z);
+
+const PASSWORD_MAX_AGE_DAYS = ENV.PASSWORD_MAX_AGE_DAYS;
+// Pending MFA challenges — in-memory, short-lived (5 min TTL)
+const mfaPending = new Map<string, { userId: string; tenantId: string; roles: string[]; email: string; expiresAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of mfaPending) { if (v.expiresAt < now) mfaPending.delete(k); }
+}, 60_000);
 
 export const authRouter = Router();
 const DISABLED = ENV.EMAILS_DISABLED;
@@ -125,6 +135,35 @@ authRouter.post("/resend", async (req, res) => {
 });
 
 
+/** Helper: complete login (issue tokens, set cookies) */
+async function completeLogin(req: any, res: any, user: any, tenant: any) {
+  const payload = { sub: String(user._id), tid: String(tenant._id), roles: user.roles };
+  const accessToken = signAccessToken(payload);
+  const refreshToken = signRefreshToken(payload);
+  setAuthCookies(res, { accessToken, refreshToken, role: user.roles[0] });
+  await RefreshToken.create({
+    userId: user._id,
+    tenantId: tenant._id,
+    tokenHash: hashToken(refreshToken),
+    ip: req.ip,
+    deviceInfo: req.headers["user-agent"],
+    expiresAt: new Date(Date.now() + ENV.REFRESH_TOKEN_TTL_SECONDS * 1000),
+  });
+
+  // Check password expiry
+  const passwordExpired = PASSWORD_MAX_AGE_DAYS > 0 && user.passwordChangedAt
+    ? (Date.now() - user.passwordChangedAt.getTime()) > PASSWORD_MAX_AGE_DAYS * 86_400_000
+    : false;
+
+  return res.json({
+    accessToken,
+    refreshToken,
+    user: { id: user._id, email: user.email, roles: user.roles },
+    tenant: { id: tenant._id, slug: tenant.slug },
+    passwordExpired,
+  });
+}
+
 /** POST /api/v1/auth/login */
 authRouter.post("/login", async (req, res) => {
   try {
@@ -136,8 +175,11 @@ authRouter.post("/login", async (req, res) => {
     if (!user) return res.status(401).json({ error: "bad_credentials" });
     if (user.status !== "ACTIVE") return res.status(403).json({ error: "user_not_active" });
 
+    const secCtx = { tenantId: String(tenant._id), userId: String(user._id), email: email, ip: req.ip, userAgent: req.headers["user-agent"] as string };
+
     // Account lockout check
     if (user.lockUntil && user.lockUntil > new Date()) {
+      logSecurityEvent({ event: "auth.login.locked", ...secCtx });
       return res.status(423).json({ error: "account_locked", message: "Account temporarily locked. Try again later." });
     }
 
@@ -149,6 +191,7 @@ authRouter.post("/login", async (req, res) => {
         update.lockUntil = new Date(Date.now() + ENV.ACCOUNT_LOCKOUT_MINUTES * 60_000);
       }
       await User.updateOne({ _id: user._id }, update);
+      logSecurityEvent({ event: "auth.login.failed", ...secCtx, metadata: { attempts } });
       return res.status(401).json({ error: "bad_credentials" });
     }
 
@@ -156,25 +199,108 @@ authRouter.post("/login", async (req, res) => {
       await User.updateOne({ _id: user._id }, { failedLoginAttempts: 0, lockUntil: null });
     }
 
-    const payload = { sub: String(user._id), tid: String(tenant._id), roles: user.roles };
-    const accessToken = signAccessToken(payload);
-    const refreshToken = signRefreshToken(payload);
-    setAuthCookies(res, { accessToken, refreshToken, role: user.roles[0] });
-    await RefreshToken.create({
-      userId: user._id,
-      tenantId: tenant._id,
-      tokenHash: hashToken(refreshToken),
-      ip: req.ip,
-      deviceInfo: req.headers["user-agent"],
-      expiresAt: new Date(Date.now() + ENV.REFRESH_TOKEN_TTL_SECONDS * 1000),
-    });
-    return res.json({ accessToken, refreshToken, user: { id: user._id, email: user.email, roles: user.roles }, tenant: { id: tenant._id, slug: tenant.slug } });
+    // If MFA is enabled, return challenge instead of tokens
+    if (user.mfa?.enabled) {
+      const ticket = crypto.randomBytes(32).toString("hex");
+      mfaPending.set(ticket, {
+        userId: String(user._id),
+        tenantId: String(tenant._id),
+        roles: user.roles,
+        email: user.email,
+        expiresAt: Date.now() + 5 * 60_000, // 5 min
+      });
+      logSecurityEvent({ event: "auth.mfa.challenge", ...secCtx });
+      return res.json({ mfaRequired: true, mfaTicket: ticket });
+    }
+
+    logSecurityEvent({ event: "auth.login.success", ...secCtx });
+    return completeLogin(req, res, user, tenant);
   } catch (e:any) {
     return res.status(400).json({ error: "invalid_request", details: e.message });
   }
 });
 
-/** POST /api/v1/auth/refresh */
+/** POST /api/v1/auth/mfa-verify — complete login with TOTP code */
+authRouter.post("/mfa-verify", async (req, res) => {
+  try {
+    const { mfaTicket, code } = z.object({
+      mfaTicket: z.string().min(1),
+      code: z.string().min(1),
+    }).parse(req.body);
+
+    const pending = mfaPending.get(mfaTicket);
+    if (!pending || pending.expiresAt < Date.now()) {
+      mfaPending.delete(mfaTicket);
+      return res.status(401).json({ error: "mfa_expired", message: "MFA session expired. Please sign in again." });
+    }
+
+    const user = await User.findById(asObjectId(pending.userId));
+    if (!user || !user.mfa?.enabled) {
+      mfaPending.delete(mfaTicket);
+      return res.status(401).json({ error: "bad_credentials" });
+    }
+
+    // Try TOTP
+    let valid = verifyTOTP(code, user.mfa.secret);
+
+    // Try recovery code
+    if (!valid) {
+      const codeHash = crypto.createHash("sha256").update(code.toUpperCase()).digest("hex");
+      const idx = user.mfa.recoveryCodes.indexOf(codeHash);
+      if (idx !== -1) {
+        valid = true;
+        user.mfa.recoveryCodes.splice(idx, 1);
+        await user.save();
+      }
+    }
+
+    if (!valid) {
+      logSecurityEvent({ event: "auth.mfa.failed", userId: pending.userId, tenantId: pending.tenantId, email: pending.email, ip: req.ip, userAgent: req.headers["user-agent"] as string });
+      return res.status(401).json({ error: "invalid_mfa_code" });
+    }
+
+    mfaPending.delete(mfaTicket);
+    logSecurityEvent({ event: "auth.mfa.success", userId: pending.userId, tenantId: pending.tenantId, email: pending.email, ip: req.ip, userAgent: req.headers["user-agent"] as string });
+
+    const tenant = await Tenant.findById(asObjectId(pending.tenantId));
+    if (!tenant) return res.status(404).json({ error: "tenant_not_found" });
+
+    return completeLogin(req, res, user, tenant);
+  } catch (e: any) {
+    return res.status(400).json({ error: "invalid_request", details: e.message });
+  }
+});
+
+/** POST /api/v1/auth/change-password */
+authRouter.post("/change-password", requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(ENV.PASSWORD_MIN_LENGTH)
+        .regex(/[A-Z]/, "Must contain uppercase")
+        .regex(/[a-z]/, "Must contain lowercase")
+        .regex(/[0-9]/, "Must contain digit"),
+    }).parse(req.body);
+
+    const auth = (req as AuthRequest).auth;
+    const user = await User.findById(asObjectId(auth.sub));
+    if (!user) return res.status(404).json({ error: "user_not_found" });
+
+    const ok = await verifyPassword(currentPassword, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "bad_credentials" });
+
+    user.passwordHash = await hashPassword(newPassword);
+    user.passwordChangedAt = new Date();
+    await user.save();
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request", details: e.issues });
+    return res.status(400).json({ error: "invalid_request" });
+  }
+});
+
+/** POST /api/v1/auth/refresh — with token rotation */
 authRouter.post("/refresh", async (req, res) => {
   const token = req.cookies?.tc_refresh || (req.headers.authorization ?? "").replace("Bearer ", "");
   if (!token) {
@@ -183,18 +309,42 @@ authRouter.post("/refresh", async (req, res) => {
   }
   try {
     const payload = verifyRefreshToken(token);
-    // Verify token exists in DB and is not revoked
-    const stored = await RefreshToken.findOne({ tokenHash: hashToken(token), revokedAt: null });
+    const oldHash = hashToken(token);
+    const stored = await RefreshToken.findOne({ tokenHash: oldHash, revokedAt: null });
     if (!stored) {
+      // Stolen token reuse detection: if the token was already rotated,
+      // revoke the entire family to protect the user
+      const rotated = await RefreshToken.findOne({ tokenHash: oldHash });
+      if (rotated?.replacedByHash) {
+        logSecurityEvent({ event: "auth.token.stolen", userId: String(rotated.userId), tenantId: String(rotated.tenantId), ip: req.ip, userAgent: req.headers["user-agent"] as string });
+        await RefreshToken.updateMany(
+          { userId: rotated.userId, revokedAt: null },
+          { revokedAt: new Date() }
+        );
+      }
       clearAuthCookies(res);
       return res.status(401).json({ error: "invalid_refresh" });
     }
+
+    // Issue new tokens (rotation)
     const accessToken = signAccessToken({ sub: payload.sub, tid: payload.tid, roles: payload.roles });
-    setAuthCookies(res, {
-      accessToken,
-      refreshToken: token,
-      role: payload.roles[0] as any,
+    const newRefreshToken = signRefreshToken({ sub: payload.sub, tid: payload.tid, roles: payload.roles });
+    const newHash = hashToken(newRefreshToken);
+
+    // Revoke old, link to new
+    await RefreshToken.updateOne({ _id: stored._id }, { revokedAt: new Date(), replacedByHash: newHash });
+
+    // Create new session record
+    await RefreshToken.create({
+      userId: stored.userId,
+      tenantId: stored.tenantId,
+      tokenHash: newHash,
+      ip: req.ip,
+      deviceInfo: req.headers["user-agent"],
+      expiresAt: new Date(Date.now() + ENV.REFRESH_TOKEN_TTL_SECONDS * 1000),
     });
+
+    setAuthCookies(res, { accessToken, refreshToken: newRefreshToken, role: payload.roles[0] as any });
     return res.json({ accessToken });
   } catch {
     clearAuthCookies(res);

@@ -10,7 +10,7 @@ import AuthGuard from '@/components/guards/AuthGuard';
 import RoleGuard from '@/components/guards/RoleGuard';
 import {
   LayoutDashboard, Ticket, Users, UserCog, CreditCard, BarChart3,
-  Palette, Mail, Key, Webhook, MessageSquareCode,
+  Palette, Mail, Key, Webhook, MessageSquareCode, ShieldCheck,
   Menu, X, Moon, Sun, LogOut, ChevronDown,
 } from 'lucide-react';
 
@@ -29,6 +29,7 @@ const settingsNav = [
   { href: '/settings/api-key', label: 'API Keys', icon: Key },
   { href: '/settings/webhooks', label: 'Webhooks', icon: Webhook },
   { href: '/settings/widget', label: 'Widget', icon: MessageSquareCode },
+  { href: '/settings/security', label: 'Security', icon: ShieldCheck },
 ];
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
@@ -58,9 +59,14 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           {i.label}
         </Link>
       ))}
+      <div className="mt-5 mb-1 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Settings</div>
+      {/* Security page accessible to all authenticated users */}
+      <Link href="/settings/security" className={linkClass('/settings/security')} onClick={() => setSidebarOpen(false)}>
+        <ShieldCheck size={18} strokeWidth={isActive('/settings/security') ? 2.5 : 2} />
+        Security
+      </Link>
       <RoleGuard roles={['ADMIN', 'OWNER']} fallback={null}>
-        <div className="mt-5 mb-1 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Settings</div>
-        {settingsNav.map(i => (
+        {settingsNav.filter(i => i.href !== '/settings/security').map(i => (
           <Link key={i.href} href={i.href} className={linkClass(i.href)} onClick={() => setSidebarOpen(false)}>
             <i.icon size={18} strokeWidth={isActive(i.href) ? 2.5 : 2} />
             {i.label}
@@ -130,7 +136,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             </div>
           </header>
           <main id="main-content" className="flex-1 p-4 md:p-6" role="main">
-            {pathname?.startsWith('/settings') ? (
+            {pathname?.startsWith('/settings') && !pathname?.startsWith('/settings/security') && !pathname?.startsWith('/settings/change-password') ? (
               <RoleGuard roles={['ADMIN', 'OWNER']}>{children}</RoleGuard>
             ) : (
               children

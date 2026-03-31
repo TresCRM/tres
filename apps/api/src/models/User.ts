@@ -6,7 +6,7 @@ import { ROLES } from "../../../../packages/types/src/roles";
 
 export type UserStatus = "PENDING" | "ACTIVE" | "DISABLED";
 
-export interface UserDoc { 
+export interface UserDoc {
   _id: Types.ObjectId;
   tenantId: Types.ObjectId;
   firstName: string;
@@ -20,6 +20,13 @@ export interface UserDoc {
     expiresAt: Date;
     verifiedAt?: Date;
   };
+  mfa?: {
+    secret: string;
+    enabled: boolean;
+    recoveryCodes: string[];
+    verifiedAt?: Date;
+  };
+  passwordChangedAt?: Date;
   failedLoginAttempts: number;
   lockUntil: Date | null;
   createdAt: Date;
@@ -32,6 +39,13 @@ const EmailVerificationSchema = new Schema({
   verifiedAt: Date
 }, { _id: false });
 
+const MfaSchema = new Schema({
+  secret: { type: String, required: true },
+  enabled: { type: Boolean, default: false },
+  recoveryCodes: { type: [String], default: [] },
+  verifiedAt: Date,
+}, { _id: false });
+
 const UserSchema = new Schema<UserDoc>({
   tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: true },
   firstName: String,
@@ -41,6 +55,8 @@ const UserSchema = new Schema<UserDoc>({
   roles: { type: [String], default: ["AGENT"] },
   status: { type: String, enum: ["PENDING","ACTIVE","DISABLED"], default: "PENDING" },
   emailVerification: EmailVerificationSchema,
+  mfa: MfaSchema,
+  passwordChangedAt: Date,
   failedLoginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Date, default: null }
 }, { timestamps: true });

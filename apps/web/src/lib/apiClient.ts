@@ -20,6 +20,12 @@ export const authApi = {
   login: (data: { email: string; password: string; tenantSlug: string }) =>
     api.post('/auth/login', data),
 
+  mfaVerify: (data: { mfaTicket: string; code: string }) =>
+    api.post('/auth/mfa-verify', data),
+
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    api.post('/auth/change-password', data),
+
   refresh: () => api.post('/auth/refresh'),
 
   me: () => api.get('/auth/me'),
@@ -31,6 +37,15 @@ export const authApi = {
   revokeSession: (id: string) => api.delete(`/auth/sessions/${id}`),
 
   revokeAllSessions: () => api.delete('/auth/sessions'),
+};
+
+// ─── MFA ──────────────────────────────────────────
+
+export const mfaApi = {
+  status: () => api.get('/mfa/status'),
+  setup: () => api.post('/mfa/setup'),
+  verify: (code: string) => api.post('/mfa/verify', { code }),
+  disable: (code: string) => api.post('/mfa/disable', { code }),
 };
 
 // ─── Tickets ───────────────────────────────────────

@@ -17,11 +17,13 @@ import { webhooksRouter } from "./webhooks";
 import { extRouter } from "./ext";
 import { widgetSettingsRouter } from "./widgetSettings";
 import { publicWidgetRouter } from "./public.widget";
+import { mfaRouter } from "./mfa";
 import { authLimiter, strictLimiter } from "../middlewares/security";
 
 export function mountRoutes(app: Express) {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
   app.use("/api/v1/auth", authLimiter, authRouter);
+  app.use("/api/v1/mfa", authLimiter, mfaRouter);
   app.use("/api/v1/subscriptions", subscriptionsRouter);
   app.use("/api/v1/tickets", ticketsRouter);
   app.use("/api/v1/customers", customersRouter);

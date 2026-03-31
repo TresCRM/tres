@@ -186,6 +186,7 @@ describe("Session Management (Phase 1.8)", () => {
   });
 
   test("refresh works with valid stored token", async () => {
+    expect(refreshToken).toBeTruthy();
     const res = await request(app)
       .post("/api/v1/auth/refresh")
       .set("Authorization", `Bearer ${refreshToken}`);
