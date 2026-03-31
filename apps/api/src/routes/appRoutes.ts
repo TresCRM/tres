@@ -17,7 +17,7 @@ import { webhooksRouter } from "./webhooks";
 import { extRouter } from "./ext";
 import { widgetSettingsRouter } from "./widgetSettings";
 import { publicWidgetRouter } from "./public.widget";
-import { authLimiter } from "../middlewares/security";
+import { authLimiter, strictLimiter } from "../middlewares/security";
 
 export function mountRoutes(app: Express) {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
@@ -36,7 +36,7 @@ export function mountRoutes(app: Express) {
   app.use("/api/v1/api-keys", apikeysRouter);
   app.use("/api/v1/webhooks", webhooksRouter);
   app.use("/api/v1/ext", extRouter);
-  app.use("/public", publicSurveysRouter);
-  app.use("/public", publicTicketsRouter);
-  app.use("/public", publicWidgetRouter);
+  app.use("/public", strictLimiter, publicSurveysRouter);
+  app.use("/public", strictLimiter, publicTicketsRouter);
+  app.use("/public", strictLimiter, publicWidgetRouter);
 }

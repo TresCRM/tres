@@ -44,5 +44,14 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
     return res.status(403).json({ error: "csrf_invalid", message: "Invalid or missing CSRF token" });
   }
 
+  // Rotate token after successful use (prevent replay)
+  const newToken = randomBytes(32).toString("hex");
+  res.cookie(CSRF_COOKIE, newToken, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  });
+
   next();
 }

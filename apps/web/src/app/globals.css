@@ -62,5 +62,5 @@ html, body, #__next { height: 100% }
 body {
   background: var(--brand-bg);
   color: var(--brand-ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-family: var(--font-source-sans), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
 }

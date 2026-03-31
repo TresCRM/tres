@@ -32,8 +32,18 @@ async function resolveWidgetToken(tokenStr: string, origin?: string) {
   // Domain validation (skip if no domains configured or in test mode)
   if (wt.allowedDomains.length > 0 && !ENV.IS_TEST) {
     if (!origin) return null;
-    const allowed = wt.allowedDomains.some(d => origin.startsWith(d) || origin.includes(new URL(d).hostname));
-    if (!allowed) return null;
+    try {
+      const originUrl = new URL(origin);
+      const allowed = wt.allowedDomains.some(d => {
+        try {
+          const allowedUrl = new URL(d);
+          // Exact hostname match (no prefix/substring bypass)
+          return originUrl.hostname === allowedUrl.hostname ||
+                 originUrl.hostname.endsWith('.' + allowedUrl.hostname);
+        } catch { return false; }
+      });
+      if (!allowed) return null;
+    } catch { return null; }
   }
 
   return wt;

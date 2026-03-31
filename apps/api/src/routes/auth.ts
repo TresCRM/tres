@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { AuthRequest } from "../types/auth";
-import crypto from "crypto";
+import crypto, { timingSafeEqual } from "crypto";
 import { Tenant } from "../models/Tenant";
 import { User } from "../models/User";
 import { hashPassword, verifyPassword, signAccessToken, signRefreshToken, hashToken, verifyRefreshToken, asObjectId } from "../utils/auth";
@@ -77,7 +77,9 @@ authRouter.post("/verify", async (req, res) => {
 
     const user = await User.findOne({ tenantId: tenant._id, email: email.toLowerCase() });
     if (!user || !user.emailVerification) return res.status(400).json({ error: "no_token" });
-    if (user.emailVerification.token !== token) return res.status(400).json({ error: "bad_token" });
+    const tokenMatch = user.emailVerification.token.length === token.length &&
+      timingSafeEqual(Buffer.from(user.emailVerification.token), Buffer.from(token));
+    if (!tokenMatch) return res.status(400).json({ error: "bad_token" });
     if (user.emailVerification.expiresAt.getTime() < Date.now()) return res.status(400).json({ error: "expired_token" });
 
     user.status = "ACTIVE";

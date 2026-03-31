@@ -20,6 +20,11 @@ import { MongoServerError } from "mongodb";
 import { logActivity } from "../utils/log";
 extendZodWithOpenApi(z);
 
+/** Escape special regex characters to prevent ReDoS */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 const listOf = <T extends z.ZodTypeAny>(item: T) =>
   z.preprocess((v) => {
     if (v == null) return [];
@@ -213,11 +218,14 @@ ticketsRouter.get("/", requireAuth, async (req, res) => {
   if (q.status) filter.status = q.status;
   if (q.priority) filter.priority = q.priority;
   if (q.assigneeId) filter.assigneeId = asObjectId(q.assigneeId);
-  if (q.q) filter.$or = [
-    { subject: { $regex: q.q, $options:"i" } },
-    { body:    { $regex: q.q, $options:"i" } },
-    { tags: q.q }
-  ];
+  if (q.q) {
+    const safeQ = escapeRegex(q.q);
+    filter.$or = [
+      { subject: { $regex: safeQ, $options:"i" } },
+      { body:    { $regex: safeQ, $options:"i" } },
+      { tags: q.q }
+    ];
+  }
 
   const cursorCond = q.cursor ? { _id: { $lt: new Types.ObjectId(q.cursor) } } : {};
   const items = await Ticket.find({ ...filter, ...cursorCond })
@@ -278,8 +286,10 @@ ticketsRouter.post("/",
          requestId
        });
 
-      // Increment lifetime ticket count for free tier tracking
-      await Tenant.updateOne({ _id: asObjectId(auth.tid) }, { $inc: { lifetimeTicketCount: 1 } });
+      // Only increment if freeTierGuard didn't already do it atomically
+      if (!(req as any)._ticketCountIncremented) {
+        await Tenant.updateOne({ _id: asObjectId(auth.tid) }, { $inc: { lifetimeTicketCount: 1 } });
+      }
 
       void emitTicketEvent(auth.tid, { event: "ticket.created", ticketId: String(created._id) });
       try {

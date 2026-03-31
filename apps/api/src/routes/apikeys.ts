@@ -74,7 +74,7 @@ apikeysRouter.post("/", requireAuth, requirePermission("SETTINGS_UPDATE"), async
   try {
     const body = CreateBody.parse(req.body);
     const rawKey = `tcrm_${randomBytes(32).toString("hex")}`;
-    const prefix = rawKey.slice(0, 8);
+    const prefix = rawKey.slice(0, 12);
     const keyHash = createHash("sha256").update(rawKey).digest("hex");
 
     const apiKey = await ApiKey.create({

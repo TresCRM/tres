@@ -22,7 +22,7 @@ export const authLimiter = rateLimit({
 
 export const strictLimiter = rateLimit({
   windowMs: 60_000,
-  max: 5,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   skip,

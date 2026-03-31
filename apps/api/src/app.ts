@@ -37,10 +37,18 @@ app.use(csrfProtection);
 app.use(helmet.contentSecurityPolicy({
   useDefaults: true,
   directives: {
-    "script-src": ["'self'", "'unsafe-inline'"],
+    "script-src": ["'self'"],
     "style-src": ["'self'", "https:", "'unsafe-inline'"]
   }
 }));
+
+// Serve uploaded files with security headers to prevent XSS via uploaded content
+app.use('/uploads', (_req, res, next) => {
+  res.setHeader('Content-Disposition', 'attachment');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  next();
+}, require('express').static(require('path').resolve(process.cwd(), 'uploads')));
 
 // Routes
 mountRoutes(app);

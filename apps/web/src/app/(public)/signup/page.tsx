@@ -66,6 +66,27 @@ const signupPayloadSchema = z.object({
 --------------------------------------------- */
 type Step = 1|2|3|4;
 
+function StepIndicator({ steps, currentStep }: { steps: { n: number; label: string }[]; currentStep: number }) {
+  function cls(sn: number) {
+    if (currentStep > sn) return 'bg-green-500 text-white';
+    if (currentStep === sn) return 'bg-indigo-600 text-white shadow-md';
+    return 'bg-gray-100 text-gray-400 border';
+  }
+  return (
+    <div className="flex items-center justify-center gap-2 text-sm" role="navigation" aria-label="Signup progress">
+      {steps.map((s, i) => (
+        <div key={s.n} className="flex items-center gap-2">
+          <div className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold ${cls(s.n)}`}>
+            {currentStep > s.n ? '\u2713' : s.n}
+          </div>
+          <span className={`hidden sm:block text-xs ${currentStep >= s.n ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>{s.label}</span>
+          {i !== steps.length - 1 && <div className={`w-8 sm:w-12 h-0.5 rounded ${currentStep > s.n ? 'bg-green-400' : 'bg-gray-200'}`} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SignupWizardInner() {
   const online = useNetwork();
   const sp = useSearchParams();
@@ -212,26 +233,24 @@ function SignupWizardInner() {
     <section className="mx-auto max-w-2xl px-4 py-10 space-y-6">
       {/* Offline banner */}
       {!online && (
-        <div className="rounded-xl bg-red-600 text-white px-4 py-2 text-sm">
-          You’re offline. Form actions are disabled until connection is restored.
+        <div className="rounded-xl bg-red-600 text-white px-4 py-3 text-sm flex items-center gap-2" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+          You&apos;re offline. Form actions are disabled until connection is restored.
         </div>
       )}
 
-      <h1 className="text-2xl font-semibold">Create your workspace</h1>
-
-      {/* Stepper */}
-      <div className="flex items-center gap-2 text-sm">
-        {steps.map((s,i)=>(
-          <div key={s.n} className="flex items-center gap-2">
-            <div className={`h-7 w-7 rounded-full grid place-items-center border ${step>=s.n?'bg-gray-900 text-white':'bg-white text-gray-500'}`}>{s.n}</div>
-            <div className={`hidden sm:block ${step>=s.n?'font-medium':''}`}>{s.label}</div>
-            {i<steps.length-1 && <div className="w-8 sm:w-16 h-[1px] bg-gray-200" />}
-          </div>
-        ))}
+      {/* Header */}
+      <div className="text-center">
+        <div className="w-14 h-14 bg-[var(--brand-primary,#4F46E5)] rounded-2xl flex items-center justify-center mx-auto mb-4 text-white font-bold text-lg">T</div>
+        <h1 className="text-2xl font-bold">Create your workspace</h1>
+        <p className="text-gray-500 text-sm mt-1">Set up your TRES CRM account in minutes</p>
       </div>
 
+      {/* Stepper */}
+      <StepIndicator steps={steps} currentStep={step} />
+
       {/* Card */}
-      <div className="rounded-2xl border p-5">
+      <div className="rounded-2xl border bg-white shadow-sm p-6">
         {step<=3 ? (
           <Formik
             enableReinitialize
@@ -302,7 +321,7 @@ function SignupWizardInner() {
                   <div className="flex items-center gap-2">
                     {busy && <Spinner />}
                     <Button type="submit" disabled={isSubmitting || busy || !online}>
-                      {step < 3 ? 'Continue' : (busy ? 'Creating…' : 'Create workspace')}
+                      {step !== 3 ? 'Continue' : (busy ? 'Creating…' : 'Create workspace')}
                     </Button>
                   </div>
                 </div>
@@ -310,11 +329,16 @@ function SignupWizardInner() {
             )}
           </Formik>
         ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-gray-700">
-              We sent a verification email to <strong>{values.v_email || values.email}</strong>.  
-              Click the link in the email, or paste the code here.
-            </p>
+          <div className="space-y-5">
+            <div className="text-center pb-2">
+              <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary,#4F46E5)" strokeWidth="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+              </div>
+              <p className="text-sm text-gray-700">
+                We sent a verification email to <strong>{values.v_email || values.email}</strong>.
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Click the link in the email, or paste the code below.</p>
+            </div>
 
             <div className="grid md:grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -369,5 +393,18 @@ function SignupWizardInner() {
 }
 
 export default function SignupWizard() {
-  return <Suspense fallback={<div className="flex justify-center py-16"><div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-blue-600 rounded-full" /></div>}><SignupWizardInner /></Suspense>;
+  return (
+    <Suspense fallback={
+      <div className="min-h-[calc(100vh-200px)] flex items-center justify-center" role="status" aria-label="Loading signup form">
+        <div className="text-center">
+          <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="animate-spin h-7 w-7 border-3 border-gray-300 border-t-[var(--brand-primary,#4F46E5)] rounded-full" />
+          </div>
+          <p className="text-sm text-gray-500">Loading signup...</p>
+        </div>
+      </div>
+    }>
+      <SignupWizardInner />
+    </Suspense>
+  );
 }

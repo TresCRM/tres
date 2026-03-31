@@ -18,15 +18,17 @@ import {
 } from "../../../../packages/types/src/roles";
 
 /**
- * Verify Bearer JWT token and attach `req.auth` with typed payload.
+ * Verify JWT token and attach `req.auth` with typed payload.
+ * Checks Authorization Bearer header first, then falls back to httpOnly tc_session cookie.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const hdr = req.header("Authorization");
-  if (!hdr?.startsWith("Bearer ")) {
+  const token = hdr?.startsWith("Bearer ") ? hdr.slice(7) : req.cookies?.tc_session;
+  if (!token) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-    const payload = verifyToken(hdr.slice(7));
+    const payload = verifyToken(token);
     // Normalize roles: filter to valid roles only for defense in depth
     const validRoles = (payload.roles || []).filter(
       (r: string): r is Role => isValidRole(r)

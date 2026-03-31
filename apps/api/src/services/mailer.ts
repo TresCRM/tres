@@ -63,9 +63,17 @@ export async function sendEmail(input: SendEmailInput) {
     } : undefined
   });
 
+  // Sanitize headers to prevent SMTP injection (CR/LF injection)
+  const safeHeaders: Record<string, string> = {};
+  if (input.headers) {
+    for (const [k, v] of Object.entries(input.headers)) {
+      safeHeaders[k.replace(/[\r\n]/g, '')] = String(v).replace(/[\r\n]/g, '');
+    }
+  }
+
   const from = process.env.FROM_EMAIL || "no-reply@trescrm.local";
   const info = await transporter.sendMail({
-    from, to: input.to, subject: input.subject, html: input.html, text: input.text, headers: input.headers
+    from, to: input.to, subject: input.subject, html: input.html, text: input.text, headers: Object.keys(safeHeaders).length ? safeHeaders : undefined
   });
   return { id: info.messageId, accepted: info.accepted };
 }

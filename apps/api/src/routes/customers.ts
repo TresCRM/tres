@@ -14,6 +14,11 @@ import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 
 extendZodWithOpenApi(z);
 
+/** Escape special regex characters to prevent ReDoS */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export const customersRouter = Router();
 
 /* ---------- Zod schemas ---------- */
@@ -117,10 +122,11 @@ customersRouter.get("/", requireAuth, requirePermission("CUSTOMER_READ"), async 
   const filter: any = { tenantId: asObjectId(auth.tid) };
 
   if (q.q) {
+    const safeQ = escapeRegex(q.q);
     filter.$or = [
-      { name: { $regex: q.q, $options: "i" } },
-      { email: { $regex: q.q, $options: "i" } },
-      { company: { $regex: q.q, $options: "i" } },
+      { name: { $regex: safeQ, $options: "i" } },
+      { email: { $regex: safeQ, $options: "i" } },
+      { company: { $regex: safeQ, $options: "i" } },
     ];
   }
   if (q.cursor) filter._id = { $lt: asObjectId(q.cursor) };

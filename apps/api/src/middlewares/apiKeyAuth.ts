@@ -32,7 +32,7 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: "api_key_required", message: "X-API-Key header is required" });
   }
 
-  const prefix = raw.slice(0, 8);
+  const prefix = raw.slice(0, 12);
   const hash = hashKey(raw);
 
   ApiKey.findOne({ prefix, keyHash: hash, isActive: true })
