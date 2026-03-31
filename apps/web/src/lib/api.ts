@@ -46,10 +46,14 @@ api.interceptors.response.use(
   async (error) => {
     const { response, config } = error || {};
 
-    // MFA enforcement: redirect to setup if API returns mfa_required
+    // MFA enforcement: redirect to setup if API returns mfa_required (only on console pages)
     if (response?.status === 403 && response?.data?.error === 'mfa_required') {
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/settings/security')) {
-        window.location.href = '/settings/security?setup=required';
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        const isConsolePage = /^\/(dashboard|tickets|customers|staff|billing|settings|reports)/.test(path);
+        if (isConsolePage && !path.startsWith('/settings/security')) {
+          window.location.href = '/settings/security?setup=required';
+        }
       }
       return Promise.reject(error);
     }

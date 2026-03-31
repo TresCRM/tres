@@ -15,7 +15,6 @@ import { mountRoutes } from "./routes/appRoutes";
 import { requestContext } from "./middlewares/requestContext";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
-import { requireMfaForPrivileged } from "./middlewares/auth";
 import { ENV } from "./config/env";
 
 const log = pino({ transport: { target: "pino-pretty" } });
@@ -73,9 +72,6 @@ app.use('/uploads', (_req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'none'");
   next();
 }, require('express').static(require('path').resolve(process.cwd(), 'uploads')));
-
-// MFA enforcement for privileged roles (applied before routes)
-app.use(requireMfaForPrivileged);
 
 // Routes
 mountRoutes(app);

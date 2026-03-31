@@ -19,27 +19,34 @@ import { widgetSettingsRouter } from "./widgetSettings";
 import { publicWidgetRouter } from "./public.widget";
 import { mfaRouter } from "./mfa";
 import { gdprRouter } from "./gdpr";
+import { requireMfaForPrivileged } from "../middlewares/auth";
 import { authLimiter, strictLimiter } from "../middlewares/security";
 
 export function mountRoutes(app: Express) {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+  // Auth, MFA, GDPR — exempt from MFA enforcement (users need these to set up MFA)
   app.use("/api/v1/auth", authLimiter, authRouter);
   app.use("/api/v1/mfa", authLimiter, mfaRouter);
   app.use("/api/v1/gdpr", strictLimiter, gdprRouter);
-  app.use("/api/v1/subscriptions", subscriptionsRouter);
-  app.use("/api/v1/tickets", ticketsRouter);
-  app.use("/api/v1/customers", customersRouter);
-  app.use("/api/v1/logs", logsRouter);
-  app.use("/api/v1/users", usersRouter);
-  app.use("/api/v1/emails", emailsRouter);
-  app.use("/api/v1/surveys", surveysRouter);
-  app.use("/api/v1/settings", settingsRouter);
-  app.use("/api/v1/settings", widgetSettingsRouter);
-  app.use("/api/v1/add-ons", addonsRouter);
-  app.use("/api/v1", attachmentsRouter);
-  app.use("/api/v1/api-keys", apikeysRouter);
-  app.use("/api/v1/webhooks", webhooksRouter);
-  app.use("/api/v1/ext", extRouter);
+
+  // Protected routes — MFA enforced for OWNER/ADMIN after requireAuth runs per-router
+  app.use("/api/v1/subscriptions", requireMfaForPrivileged, subscriptionsRouter);
+  app.use("/api/v1/tickets", requireMfaForPrivileged, ticketsRouter);
+  app.use("/api/v1/customers", requireMfaForPrivileged, customersRouter);
+  app.use("/api/v1/logs", requireMfaForPrivileged, logsRouter);
+  app.use("/api/v1/users", requireMfaForPrivileged, usersRouter);
+  app.use("/api/v1/emails", requireMfaForPrivileged, emailsRouter);
+  app.use("/api/v1/surveys", requireMfaForPrivileged, surveysRouter);
+  app.use("/api/v1/settings", requireMfaForPrivileged, settingsRouter);
+  app.use("/api/v1/settings", requireMfaForPrivileged, widgetSettingsRouter);
+  app.use("/api/v1/add-ons", requireMfaForPrivileged, addonsRouter);
+  app.use("/api/v1", requireMfaForPrivileged, attachmentsRouter);
+  app.use("/api/v1/api-keys", requireMfaForPrivileged, apikeysRouter);
+  app.use("/api/v1/webhooks", requireMfaForPrivileged, webhooksRouter);
+  app.use("/api/v1/ext", extRouter); // ext uses API key auth, not JWT — no MFA
+
+  // Public routes — no auth required
   app.use("/public", strictLimiter, publicSurveysRouter);
   app.use("/public", strictLimiter, publicTicketsRouter);
   app.use("/public", strictLimiter, publicWidgetRouter);

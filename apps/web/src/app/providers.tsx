@@ -17,7 +17,14 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   const { setAuth, clearAuth, setLoading } = useAuthStore();
 
   useEffect(() => {
-    // Try to restore session from httpOnly cookie via /me
+    // Only attempt session restore if a session cookie likely exists
+    // (tc_role is non-httpOnly, so we can check it as a proxy)
+    const hasSession = typeof document !== 'undefined' && document.cookie.includes('tc_role');
+    if (!hasSession) {
+      setLoading(false);
+      return;
+    }
+
     authApi.me()
       .then((res) => {
         const { sub, tid, roles } = res.data;
@@ -31,10 +38,16 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
       });
   }, [setAuth, clearAuth, setLoading]);
 
-  // Periodic session validity check
+  // Periodic session validity check — only when authenticated and on console routes
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!useAuthStore.getState().isAuthenticated) return;
+      const { isAuthenticated } = useAuthStore.getState();
+      if (!isAuthenticated) return;
+      // Don't redirect from public pages
+      const path = window.location.pathname;
+      const isConsolePage = /^\/(dashboard|tickets|customers|staff|billing|settings|reports)/.test(path);
+      if (!isConsolePage) return;
+
       authApi.me().catch(() => {
         clearAuth();
         window.location.href = '/signin';
@@ -52,7 +65,11 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
         if (e.data?.type === 'logout') {
           setAccessToken(null);
           useAuthStore.setState({ user: null, token: null, isAuthenticated: false, isLoading: false });
-          window.location.href = '/signin';
+          // Only redirect if on a protected page
+          const path = window.location.pathname;
+          if (/^\/(dashboard|tickets|customers|staff|billing|settings|reports)/.test(path)) {
+            window.location.href = '/signin';
+          }
         }
       };
     } catch {}
