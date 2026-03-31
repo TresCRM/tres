@@ -5,8 +5,9 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes } from "crypto";
 import { requireAuth, requirePermission } from "../middlewares/auth";
+import { hashApiKey } from "../middlewares/apiKeyAuth";
 import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { ApiKey } from "../models/ApiKey";
@@ -75,7 +76,7 @@ apikeysRouter.post("/", requireAuth, requirePermission("SETTINGS_UPDATE"), async
     const body = CreateBody.parse(req.body);
     const rawKey = `tcrm_${randomBytes(32).toString("hex")}`;
     const prefix = rawKey.slice(0, 12);
-    const keyHash = createHash("sha256").update(rawKey).digest("hex");
+    const keyHash = await hashApiKey(rawKey);
 
     const apiKey = await ApiKey.create({
       tenantId: asObjectId(auth.tid),

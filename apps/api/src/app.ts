@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import compression from "compression";
+import crypto from "crypto";
 import pino from "pino";
 import pinoHttp from "pino-http";
 import { errorHandler as activityHandler } from "./middlewares/error";
@@ -20,6 +21,17 @@ const log = pino({ transport: { target: "pino-pretty" } });
 export const app = express();
 surveyOnTicketClosed(process.env.APP_HOST || undefined);
 
+// HTTPS redirect in production (respects reverse proxy X-Forwarded-Proto)
+if (ENV.IS_PROD) {
+  app.set("trust proxy", 1);
+  app.use((req, res, next) => {
+    if (req.headers["x-forwarded-proto"] !== "https" && !req.secure) {
+      return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
+
 // Security + perf
 app.use(requestContext);
 app.use(helmet());
@@ -34,14 +46,24 @@ app.use(pinoHttp({ logger: log }));
 app.use(rateLimiter);
 app.use(auditMiddleware);
 app.use(csrfProtection);
-app.use(helmet.contentSecurityPolicy({
-  useDefaults: true,
-  directives: {
-    "script-src": ["'self'"],
-    "style-src": ["'self'", "https:"],
-    "img-src": ["'self'", "data:", "https:"],
-  }
-}));
+
+// CSP with per-request nonce for inline styles
+app.use((_req, res, next) => {
+  const nonce = crypto.randomBytes(16).toString("base64");
+  (res as any).locals.cspNonce = nonce;
+  next();
+});
+app.use((req, res, next) => {
+  const nonce = (res as any).locals.cspNonce;
+  helmet.contentSecurityPolicy({
+    useDefaults: true,
+    directives: {
+      "script-src": ["'self'"],
+      "style-src": ["'self'", "https:", `'nonce-${nonce}'`],
+      "img-src": ["'self'", "data:", "https:"],
+    }
+  })(req, res, next);
+});
 
 // Serve uploaded files with security headers to prevent XSS via uploaded content
 app.use('/uploads', (_req, res, next) => {

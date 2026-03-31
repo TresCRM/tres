@@ -32,9 +32,10 @@ function MfaStep({ ticket, onBack, onError }: { ticket: string; onBack: () => vo
     setLoading(true);
     try {
       const res = await authApi.mfaVerify({ mfaTicket: ticket, code: code.trim() });
-      const { accessToken, user, tenant, passwordExpired } = res.data;
+      const { accessToken, user, tenant, passwordExpired, mfaSetupRequired } = res.data;
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
-      router.push(passwordExpired ? '/settings/change-password' : '/dashboard');
+      if (passwordExpired) router.push('/settings/change-password');
+      else router.push('/dashboard');
     } catch (err: any) {
       const errCode = err?.response?.data?.error;
       if (errCode === 'mfa_expired') {
@@ -132,9 +133,11 @@ function SignInForm() {
         return;
       }
 
-      const { accessToken, user, tenant, passwordExpired } = res.data;
+      const { accessToken, user, tenant, passwordExpired, mfaSetupRequired } = res.data;
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
-      router.push(passwordExpired ? '/settings/change-password' : '/dashboard');
+      if (passwordExpired) router.push('/settings/change-password');
+      else if (mfaSetupRequired) router.push('/settings/security?setup=required');
+      else router.push('/dashboard');
     } catch (err: any) {
       const code = err?.response?.data?.error;
       const messages: Record<string, string> = {

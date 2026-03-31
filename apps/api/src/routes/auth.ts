@@ -155,12 +155,17 @@ async function completeLogin(req: any, res: any, user: any, tenant: any) {
     ? (Date.now() - user.passwordChangedAt.getTime()) > PASSWORD_MAX_AGE_DAYS * 86_400_000
     : false;
 
+  // Privileged roles must have MFA enabled
+  const PRIVILEGED_ROLES = ["OWNER", "ADMIN"];
+  const mfaSetupRequired = user.roles.some((r: string) => PRIVILEGED_ROLES.includes(r)) && !user.mfa?.enabled;
+
   return res.json({
     accessToken,
     refreshToken,
     user: { id: user._id, email: user.email, roles: user.roles },
     tenant: { id: tenant._id, slug: tenant.slug },
     passwordExpired,
+    mfaSetupRequired,
   });
 }
 
@@ -326,6 +331,21 @@ authRouter.post("/refresh", async (req, res) => {
       return res.status(401).json({ error: "invalid_refresh" });
     }
 
+    // Device binding: detect IP/UA drift
+    const currentIp = req.ip || "";
+    const currentUa = (req.headers["user-agent"] || "").slice(0, 100);
+    const storedIp = stored.ip || "";
+    const storedUa = (stored.deviceInfo || "").slice(0, 100);
+    const ipChanged = storedIp && currentIp && storedIp !== currentIp;
+    const uaChanged = storedUa && currentUa && storedUa !== currentUa;
+    // If BOTH IP and UA changed simultaneously, treat as suspicious
+    if (ipChanged && uaChanged) {
+      logSecurityEvent({ event: "auth.token.stolen", userId: String(stored.userId), tenantId: String(stored.tenantId), ip: currentIp, userAgent: currentUa, metadata: { reason: "ip_ua_drift", oldIp: storedIp, newIp: currentIp } });
+      await RefreshToken.updateMany({ userId: stored.userId, revokedAt: null }, { revokedAt: new Date() });
+      clearAuthCookies(res);
+      return res.status(401).json({ error: "session_invalidated", message: "Session invalidated due to suspicious activity. Please sign in again." });
+    }
+
     // Issue new tokens (rotation)
     const accessToken = signAccessToken({ sub: payload.sub, tid: payload.tid, roles: payload.roles });
     const newRefreshToken = signRefreshToken({ sub: payload.sub, tid: payload.tid, roles: payload.roles });
@@ -355,7 +375,12 @@ authRouter.post("/refresh", async (req, res) => {
 /** GET /api/v1/auth/me */
 authRouter.get("/me", requireAuth, async (req, res) => {
   const auth = (req as AuthRequest).auth;
-  return res.json(auth);
+  let user: any = null;
+  try { user = await User.findById(asObjectId(auth.sub)).select("mfa.enabled").lean(); } catch {}
+  const PRIVILEGED_ROLES = ["OWNER", "ADMIN"];
+  const mfaEnabled = !!user?.mfa?.enabled;
+  const mfaSetupRequired = auth.roles.some((r: string) => PRIVILEGED_ROLES.includes(r)) && !mfaEnabled;
+  return res.json({ ...auth, mfaEnabled, mfaSetupRequired });
 });
 
 authRouter.post('/logout', requireAuth, async (req, res) => {

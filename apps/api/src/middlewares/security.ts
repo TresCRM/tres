@@ -1,7 +1,17 @@
 import rateLimit from "express-rate-limit";
+import type { Request } from "express";
 import { ENV } from "../config/env";
 
 const skip = () => ENV.DISABLE_RATE_LIMIT;
+
+/** Key generator: uses authenticated user ID if available, otherwise IP */
+function userOrIpKey(req: Request): string {
+  const auth = (req as any).auth;
+  if (auth?.sub) return `user:${auth.sub}`;
+  const apiKey = (req as any).apiKey;
+  if (apiKey?.keyId) return `apikey:${apiKey.keyId}`;
+  return req.ip || "unknown";
+}
 
 export const globalLimiter = rateLimit({
   windowMs: ENV.RATE_LIMIT_WINDOW_MS,
@@ -9,6 +19,7 @@ export const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip,
+  keyGenerator: userOrIpKey,
 });
 
 export const authLimiter = rateLimit({

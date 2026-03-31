@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { mfaApi, authApi } from '@/lib/apiClient';
-import { ShieldCheck, ShieldOff, QrCode, Copy, Download, Loader2, AlertCircle, CheckCircle2, Eye, EyeOff, Lock } from 'lucide-react';
+import { ShieldCheck, ShieldOff, QrCode, Copy, Download, Loader2, AlertCircle, CheckCircle2, Eye, EyeOff, Lock, AlertTriangle } from 'lucide-react';
 
 type Step = 'status' | 'setup' | 'verify' | 'recovery' | 'disable' | 'change-password';
 
 export default function SecuritySettingsPage() {
+  const params = useSearchParams();
+  const setupRequired = params.get('setup') === 'required';
   const [step, setStep] = useState<Step>('status');
   const [mfaEnabled, setMfaEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -124,6 +127,16 @@ export default function SecuritySettingsPage() {
     <div className="max-w-2xl">
       <h1 className="text-xl font-bold mb-1">Security Settings</h1>
       <p className="text-gray-500 text-sm mb-6">Manage two-factor authentication and password settings.</p>
+
+      {setupRequired && !mfaEnabled && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+          <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-amber-800">MFA Required for Admin Accounts</p>
+            <p className="text-xs text-amber-600 mt-0.5">Your role requires two-factor authentication. Please enable it to continue using the console.</p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2" role="alert">
