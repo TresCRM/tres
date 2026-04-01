@@ -130,4 +130,11 @@ export const ENV = {
   ACCOUNT_LOCKOUT_MINUTES: int("ACCOUNT_LOCKOUT_MINUTES", 30),
   PASSWORD_MIN_LENGTH: int("PASSWORD_MIN_LENGTH", 10),
   PASSWORD_MAX_AGE_DAYS: int("PASSWORD_MAX_AGE_DAYS", 90),
+
+  // --- Platform Admin ---
+  ADMIN_EMAIL: optional("ADMIN_EMAIL", "admin@trescrm.local"),
+  ADMIN_PASSWORD: optional("ADMIN_PASSWORD", isTest ? "AdminPass123!" : ""),
+  ADMIN_FIRST_NAME: optional("ADMIN_FIRST_NAME", "Platform"),
+  ADMIN_LAST_NAME: optional("ADMIN_LAST_NAME", "Admin"),
+  PLATFORM_TENANT_SLUG: "__platform__",
 };

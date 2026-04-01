@@ -30,7 +30,9 @@ export type SecurityEventType =
   | "auth.password.changed"
   | "auth.password.expired"
   | "auth.signup"
-  | "auth.verify";
+  | "auth.verify"
+  | "admin.access_denied"
+  | "admin.action";
 
 interface SecurityEvent {
   event: SecurityEventType;

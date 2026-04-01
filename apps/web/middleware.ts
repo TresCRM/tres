@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const VALID_ROLES = new Set(['OWNER', 'ADMIN', 'AGENT', 'BILLING', 'READONLY', 'INTEGRATION', 'CUSTOMER']);
-const ADMIN_ROLES = new Set(['ADMIN', 'OWNER']);
+const VALID_ROLES = new Set([
+  'OWNER', 'ADMIN', 'AGENT', 'BILLING', 'READONLY', 'INTEGRATION', 'CUSTOMER',
+  'SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL',
+]);
+const ADMIN_ROLES = new Set(['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL']);
+const TENANT_ADMIN_ROLES = new Set(['ADMIN', 'OWNER']);
 const ADMIN_ROUTES = [/^\/(admin)(\/|$)/];
 const CONSOLE_ROUTES = [/^\/(console|dashboard|tickets|customers|staff|billing|settings|reports)(\/|$)/];
 

@@ -21,6 +21,7 @@ import { mfaRouter } from "./mfa";
 import { gdprRouter } from "./gdpr";
 import { requireMfaForPrivileged } from "../middlewares/auth";
 import { authLimiter, strictLimiter } from "../middlewares/security";
+import { adminRouter } from "../admin/routes";
 
 export function mountRoutes(app: Express) {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
@@ -45,6 +46,9 @@ export function mountRoutes(app: Express) {
   app.use("/api/v1/api-keys", requireMfaForPrivileged, apikeysRouter);
   app.use("/api/v1/webhooks", requireMfaForPrivileged, webhooksRouter);
   app.use("/api/v1/ext", extRouter); // ext uses API key auth, not JWT — no MFA
+
+  // Admin routes — separated from tenant routes, own middleware stack
+  app.use("/api/v1/admin", adminRouter);
 
   // Public routes — no auth required
   app.use("/public", strictLimiter, publicSurveysRouter);

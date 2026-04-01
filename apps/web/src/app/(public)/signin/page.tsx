@@ -35,7 +35,10 @@ function MfaStep({ ticket, onBack, onError }: { ticket: string; onBack: () => vo
       const res = await authApi.mfaVerify({ mfaTicket: ticket, code: code.trim() });
       const { accessToken, user, tenant, passwordExpired, mfaSetupRequired } = res.data;
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
+      const ADMIN_ROLES = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL'];
+      const isAdmin = user.roles?.some((r: string) => ADMIN_ROLES.includes(r));
       if (passwordExpired) router.push('/settings/change-password');
+      else if (isAdmin) router.push('/admin');
       else router.push('/dashboard');
     } catch (err: any) {
       const errCode = err?.response?.data?.error;
@@ -136,8 +139,11 @@ function SignInForm() {
 
       const { accessToken, user, tenant, passwordExpired, mfaSetupRequired } = res.data;
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
+      const ADMIN_ROLES = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL'];
+      const isAdmin = user.roles?.some((r: string) => ADMIN_ROLES.includes(r));
       if (passwordExpired) router.push('/settings/change-password');
       else if (mfaSetupRequired) router.push('/settings/security?setup=required');
+      else if (isAdmin) router.push('/admin');
       else router.push('/dashboard');
     } catch (err: any) {
       const code = err?.response?.data?.error;

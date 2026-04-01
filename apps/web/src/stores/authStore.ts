@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { setAccessToken } from '@/lib/api';
 
-export type Role = 'OWNER' | 'ADMIN' | 'AGENT' | 'BILLING' | 'READONLY' | 'INTEGRATION' | 'CUSTOMER';
+export type Role = 'OWNER' | 'ADMIN' | 'AGENT' | 'BILLING' | 'READONLY' | 'INTEGRATION' | 'CUSTOMER' | 'SUPER_ADMIN' | 'MANAGER' | 'SALES' | 'CUSTOMER_CARE' | 'SPECIAL';
 
 export interface AuthUser {
   id: string;
