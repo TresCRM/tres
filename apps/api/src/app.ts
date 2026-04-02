@@ -15,6 +15,7 @@ import { mountRoutes } from "./routes/appRoutes";
 import { requestContext } from "./middlewares/requestContext";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
+import { metricsMiddleware } from "./observability/metrics";
 import { ENV } from "./config/env";
 
 const log = pino({ transport: { target: "pino-pretty" } });
@@ -44,6 +45,7 @@ app.use(cookieParser());
 app.use(express.json({ limit: "2mb" }));
 app.use(pinoHttp({ logger: log }));
 app.use(rateLimiter);
+app.use(metricsMiddleware);
 app.use(auditMiddleware);
 app.use(csrfProtection);
 

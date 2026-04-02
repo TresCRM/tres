@@ -1,4 +1,5 @@
 import { Express } from "express";
+import mongoose from "mongoose";
 import { emailsRouter } from "./emails";
 import { surveysRouter } from "./surveys";
 import { publicSurveysRouter } from "./public.surveys";
@@ -24,9 +25,41 @@ import { authLimiter, strictLimiter } from "../middlewares/security";
 import { adminRouter } from "../admin/routes";
 import { invoicesRouter } from "./invoices";
 import { stripeWebhookRouter } from "./stripeWebhook";
+import { isShuttingDown } from "../lifecycle";
+import { noCache } from "../middlewares/cacheControl";
+import { getMetricsText } from "../observability/metrics";
+
+const MONGO_STATES: Record<number, string> = {
+  0: "disconnected",
+  1: "connected",
+  2: "connecting",
+  3: "disconnecting",
+};
 
 export function mountRoutes(app: Express) {
-  app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  app.get("/healthz", (_req, res) => {
+    const readyState = mongoose.connection.readyState;
+    const mongoStatus = MONGO_STATES[readyState] ?? "unknown";
+    const ok = readyState === 1;
+    const status = ok ? 200 : 503;
+    res.status(status).json({
+      ok,
+      uptime: process.uptime(),
+      mongo: mongoStatus,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get("/metrics", noCache, (_req, res) => {
+    res.set("Content-Type", "text/plain; version=0.0.4");
+    res.send(getMetricsText());
+  });
+
+  app.get("/readyz", (_req, res) => {
+    const mongoReady = mongoose.connection.readyState === 1;
+    const ready = mongoReady && !isShuttingDown();
+    res.status(ready ? 200 : 503).json({ ready });
+  });
 
   // Auth, MFA, GDPR — exempt from MFA enforcement (users need these to set up MFA)
   app.use("/api/v1/auth", authLimiter, authRouter);

@@ -4,9 +4,21 @@ services:
     image: mongo:7
     ports: ["27017:27017"]
     volumes: [mongo-data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
   nats:
     image: nats:2
-    ports: ["4222:4222"]
+    ports: ["4222:4222", "8222:8222"]
+    command: ["--http_port", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   mailhog:
     image: mailhog/mailhog
     ports: ["1025:1025", "8025:8025"]

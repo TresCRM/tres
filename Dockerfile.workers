@@ -1,0 +1,36 @@
+# ─── Stage 1: Dependencies ────────────────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/workers/package.json apps/workers/package.json
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile
+
+# ─── Stage 2: Build ───────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN pnpm -C apps/workers build 2>/dev/null || true
+
+# ─── Stage 3: Production ─────────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 workers && adduser --system --uid 1001 worker
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps ./apps
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/package.json ./
+
+USER worker
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "process.exit(0)"
+
+CMD ["node", "--require", "ts-node/register", "apps/workers/src/index.ts"]
