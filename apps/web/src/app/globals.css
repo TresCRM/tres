@@ -47,16 +47,39 @@ input, textarea, select, fieldset, hr {
 }
 fieldset { border-width: 1px; }
 
-/* accessible focus */
-:where(*):focus-visible {
-  outline-color: var(--brand-primary) !important;
-  outline-offset: 2px;
-}
-
 /* helpers */
 .border-strong { border-color: rgb(203 213 225) !important; } /* slate-300 */
 .border-brand  { border-color: var(--brand-primary) !important; }
 .border-muted-b { border-bottom-color: var(--brand-muted) !important; }
+
+/* reduced motion: disable transitions + animations for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* keyboard-only focus ring: thicker outline for high visibility */
+:where(*):focus-visible {
+  outline: 2px solid var(--brand-primary) !important;
+  outline-offset: 2px;
+}
+
+/* sr-only utility (screen reader only, visually hidden) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
 
 html, body, #__next { height: 100% }
 body {

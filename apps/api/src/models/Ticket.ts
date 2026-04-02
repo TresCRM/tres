@@ -30,5 +30,10 @@ TicketSchema.index(
   { tenantId: 1, requestId: 1 },
   { unique: true, partialFilterExpression: { requestId: { $type: "string" } } }
 );
+TicketSchema.index({ tenantId: 1, status: 1, createdAt: -1 }); // tenant-scoped status filtering
+TicketSchema.index(
+  { subject: 'text', body: 'text' },
+  { weights: { subject: 10, body: 1 } }
+); // full-text search
 
 export const Ticket = mongoose.model<TicketDoc>("Ticket", TicketSchema);

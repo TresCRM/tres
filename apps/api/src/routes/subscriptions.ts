@@ -19,6 +19,7 @@ import {
 import { sendEmail } from "../services/mailer";
 import { resolvePlan } from "../billing/plans";
 import { addMonths } from "date-fns";
+import { cachePublic } from "../middlewares/cacheControl";
 
 extendZodWithOpenApi(z);
 
@@ -281,7 +282,7 @@ subscriptionsRouter.get("/me", requireAuth, async (req, res) => {
 });
 
 // Plans
-subscriptionsRouter.get("/plans", async (_req, res) => {
+subscriptionsRouter.get("/plans", cachePublic(300), async (_req, res) => {
   const plans = await Plan.find({ active: true }).lean();
   res.json({ data: plans });
 });

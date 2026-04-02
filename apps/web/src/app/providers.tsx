@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/lib/apiClient';
 import { getAccessToken, setAccessToken } from '@/lib/api';
 import { ToastProvider } from '@/components/ui/Toast';
+import RouteAnnouncer from '@/components/a11y/RouteAnnouncer';
+import { reportWebVitals } from '@/lib/webVitals';
 
 // Theme context (keep as-is)
 const ThemeCtx = createContext<{theme: 'light'|'dark', setTheme: (t:'light'|'dark')=>void}>({theme:'light', setTheme:()=>{}});
@@ -91,11 +93,19 @@ export default function RootProviders({ children }: {children: React.ReactNode})
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+  // Report web vitals once on mount
+  useEffect(() => {
+    reportWebVitals();
+  }, []);
+
   return (
     <ThemeCtx.Provider value={{theme, setTheme}}>
       <QueryClientProvider client={qc}>
         <ToastProvider>
-          <AuthInitializer>{children}</AuthInitializer>
+          <AuthInitializer>
+            <RouteAnnouncer />
+            {children}
+          </AuthInitializer>
         </ToastProvider>
       </QueryClientProvider>
     </ThemeCtx.Provider>
