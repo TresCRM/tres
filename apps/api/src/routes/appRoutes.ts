@@ -22,6 +22,8 @@ import { gdprRouter } from "./gdpr";
 import { requireMfaForPrivileged } from "../middlewares/auth";
 import { authLimiter, strictLimiter } from "../middlewares/security";
 import { adminRouter } from "../admin/routes";
+import { invoicesRouter } from "./invoices";
+import { stripeWebhookRouter } from "./stripeWebhook";
 
 export function mountRoutes(app: Express) {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
@@ -46,6 +48,10 @@ export function mountRoutes(app: Express) {
   app.use("/api/v1/api-keys", requireMfaForPrivileged, apikeysRouter);
   app.use("/api/v1/webhooks", requireMfaForPrivileged, webhooksRouter);
   app.use("/api/v1/ext", extRouter); // ext uses API key auth, not JWT — no MFA
+  app.use("/api/v1/invoices", requireMfaForPrivileged, invoicesRouter);
+
+  // Stripe webhook — raw body, no auth (signature-verified)
+  app.use("/api/v1/webhooks/stripe", stripeWebhookRouter);
 
   // Admin routes — separated from tenant routes, own middleware stack
   app.use("/api/v1/admin", adminRouter);

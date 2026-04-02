@@ -367,7 +367,7 @@ describe("User Management (Phase 3.3)", () => {
     const res = await request(app).post("/api/v1/users/invite")
       .set("Authorization", `Bearer ${ownerToken}`)
       .send({ email: "over@limit.local", firstName: "Over", lastName: "Limit", roles: ["AGENT"] });
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(403);
     expect(res.body.error).toBe("seat_limit_reached");
   });
 });

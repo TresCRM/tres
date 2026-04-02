@@ -22,7 +22,10 @@ export interface SubscriptionDoc {
   provider: "manual" | string;
   lastPaymentAt: Date | null;
   failedPaymentCount: number;
+  nextRetryAt: Date | null;
   autoRenew: boolean;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
   entitlements: Entitlements;
   createdAt: Date; 
   updatedAt: Date;
@@ -45,11 +48,16 @@ const SubscriptionSchema = new Schema<SubscriptionDoc>({
   graceUntil:         { type: Date, default: null, index: true }, // end of grace (if any)
   canceledAt:         { type: Date, default: null },
 
-  // billing meta (MVP manual)
-  provider: { type: String, default: "manual" },
+  // billing meta
+  provider: { type: String, default: "manual" },  // "manual" | "stripe"
   lastPaymentAt: { type: Date, default: null },
   failedPaymentCount: { type: Number, default: 0 },
+  nextRetryAt: { type: Date, default: null },      // next payment retry time (exponential backoff)
   autoRenew: { type: Boolean, default: true },
+
+  // Stripe integration (null when provider=manual)
+  stripeCustomerId: { type: String, default: null, sparse: true },
+  stripeSubscriptionId: { type: String, default: null, sparse: true },
 
   // entitlements snapshot for fast checks
   entitlements: { type: Schema.Types.Mixed, default: {} },

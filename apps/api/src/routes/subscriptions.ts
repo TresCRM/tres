@@ -285,3 +285,71 @@ subscriptionsRouter.get("/plans", async (_req, res) => {
   const plans = await Plan.find({ active: true }).lean();
   res.json({ data: plans });
 });
+
+// ─── Stripe Integration Endpoints ────────────────────────────────────
+
+// POST /api/v1/subscriptions/checkout — create Stripe checkout session
+subscriptionsRouter.post(
+  "/checkout",
+  requireAuth,
+  requirePermission("BILLING_MANAGE"),
+  async (req, res) => {
+    const { getPaymentProvider } = await import("../billing/stripeProvider");
+    const provider = getPaymentProvider();
+    if (!provider) {
+      return res.status(503).json({ error: "payment_provider_unavailable", message: "Payment provider not configured" });
+    }
+
+    const auth = (req as AuthRequest).auth;
+    const body = z.object({
+      planCode: z.string().min(1),
+      interval: z.enum(["MONTH", "QUARTER", "SEMIANNUAL", "ANNUAL"]).default("MONTH"),
+      successUrl: z.string().url(),
+      cancelUrl: z.string().url(),
+    }).parse(req.body);
+
+    const existingSub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) }).lean();
+
+    try {
+      const session = await provider.createCheckoutSession({
+        planCode: body.planCode as any,
+        interval: body.interval as any,
+        tenantId: auth.tid,
+        tenantSlug: "", // populated by frontend
+        successUrl: body.successUrl,
+        cancelUrl: body.cancelUrl,
+        stripeCustomerId: existingSub?.stripeCustomerId || undefined,
+      });
+      res.json({ data: session });
+    } catch (err: any) {
+      res.status(400).json({ error: "checkout_failed", message: err.message });
+    }
+  },
+);
+
+// POST /api/v1/subscriptions/portal — create Stripe billing portal session
+subscriptionsRouter.post(
+  "/portal",
+  requireAuth,
+  requirePermission("BILLING_MANAGE"),
+  async (req, res) => {
+    const { getPaymentProvider } = await import("../billing/stripeProvider");
+    const provider = getPaymentProvider();
+    if (!provider) {
+      return res.status(503).json({ error: "payment_provider_unavailable" });
+    }
+
+    const auth = (req as AuthRequest).auth;
+    const sub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) }).lean();
+    if (!sub?.stripeCustomerId) {
+      return res.status(400).json({ error: "no_stripe_customer", message: "No Stripe customer linked to this subscription" });
+    }
+
+    try {
+      const session = await provider.createPortalSession(sub.stripeCustomerId);
+      res.json({ data: session });
+    } catch (err: any) {
+      res.status(400).json({ error: "portal_failed", message: err.message });
+    }
+  },
+);

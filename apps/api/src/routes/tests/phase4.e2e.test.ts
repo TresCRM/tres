@@ -311,14 +311,23 @@ describe("Subscription autoRenew (Phase 4.4)", () => {
 /*  5. Dunning T-14 (4.4)                                             */
 /* ================================================================== */
 
-describe("Dunning T-14 (Phase 4.4)", () => {
-  test("billing worker checks T-14 in dunning schedule", async () => {
-    // Verify the worker source includes 14 in the dunning array
+describe("Dunning Schedule (Phase 4.4 + Phase 12)", () => {
+  test("billing worker has pre-renewal dunning at T-7, T-3, T-1", async () => {
     const workerSource = require("fs").readFileSync(
       require("path").join(__dirname, "../../workers/billing.worker.ts"),
       "utf-8"
     );
-    expect(workerSource).toContain("[14,7,3,1]");
+    // Pre-renewal: T-7, T-3, T-1
+    expect(workerSource).toContain("[7, 3, 1]");
+  });
+
+  test("billing worker has post-failure dunning at T+1, T+3, T+7", async () => {
+    const workerSource = require("fs").readFileSync(
+      require("path").join(__dirname, "../../workers/billing.worker.ts"),
+      "utf-8"
+    );
+    // Post-failure: T+1, T+3, T+7
+    expect(workerSource).toContain("[1, 3, 7]");
   });
 });
 
