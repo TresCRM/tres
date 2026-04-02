@@ -2,9 +2,17 @@
  * @module admin/middleware
  * Admin-specific authentication and authorization middleware.
  * Separated from tenant middleware — admin routes operate cross-tenant.
+ *
+ * Security layers (applied in order):
+ *  1. adminRateLimiter  — strict rate limiting (30 req/min per user/IP)
+ *  2. requireAdminAuth  — JWT verification + admin role check
+ *  3. requireAdminMfa   — mandatory MFA for all admin users
+ *  4. adminAudit        — full request audit logging
+ *  5. requireAdminRole / requireAdminPermission — per-route RBAC
  */
 import type { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../utils/auth";
+import rateLimit from "express-rate-limit";
+import { verifyToken, asObjectId } from "../utils/auth";
 import type { AuthPayload } from "../types/auth";
 import {
   type Role,
@@ -16,6 +24,8 @@ import {
   ADMIN_ROLES,
 } from "../../../../packages/types/src/roles";
 import { logSecurityEvent } from "../services/securityLogger";
+import { User } from "../models/User";
+import { ENV } from "../config/env";
 
 /**
  * Verify JWT and ensure user has at least one platform admin role.
@@ -84,6 +94,133 @@ export function requireAdminPermission(...permissions: Permission[]) {
   };
 }
 
+// ─── Rate Limiter ────────────────────────────────────────────────────
+/**
+ * Strict rate limiter for admin routes.
+ * 30 requests/min per user (half the global limit) — admin actions
+ * are high-privilege and low-volume, so a tighter limit is appropriate.
+ */
+const skip = () => ENV.DISABLE_RATE_LIMIT;
+
+export const adminRateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip,
+  keyGenerator: (req: Request) => {
+    const auth = (req as any).auth;
+    return auth?.sub ? `admin:${auth.sub}` : req.ip || "unknown";
+  },
+  message: { error: "rate_limited", message: "Too many admin requests. Try again later." },
+});
+
+// ─── MFA Enforcement ─────────────────────────────────────────────────
+/**
+ * Require MFA to be enabled for ALL admin users before they can access
+ * any admin route. Unlike tenant MFA which only applies to OWNER/ADMIN,
+ * this applies to every admin role — admin actions are inherently high-risk.
+ *
+ * Returns 403 { error: "admin_mfa_required" } so the frontend can
+ * redirect to the admin security setup page.
+ */
+export async function requireAdminMfa(req: Request, res: Response, next: NextFunction) {
+  // Skip in test environment (same pattern as tenant MFA middleware)
+  if (process.env.NODE_ENV === "test") return next();
+
+  const auth = (req as any).auth as AuthPayload | undefined;
+  if (!auth) return next(); // requireAdminAuth already rejected unauthenticated
+
+  try {
+    const user = await User.findById(asObjectId(auth.sub)).select("mfa.enabled").lean();
+    if (!user?.mfa?.enabled) {
+      logSecurityEvent({
+        event: "admin.access_denied",
+        userId: auth.sub,
+        ip: req.ip,
+        metadata: { reason: "mfa_not_enabled", roles: auth.roles, route: req.originalUrl },
+      });
+      return res.status(403).json({
+        error: "admin_mfa_required",
+        message: "MFA must be enabled for all admin accounts. Set up two-factor authentication to continue.",
+      });
+    }
+    next();
+  } catch {
+    // DB error — fail closed for admin (unlike tenant which fails open)
+    return res.status(500).json({ error: "internal", message: "Security check failed" });
+  }
+}
+
+// ─── IP Allow-list (optional) ────────────────────────────────────────
+/**
+ * Optional IP allow-list for admin routes. When ADMIN_ALLOWED_IPS env var
+ * is set (comma-separated), only those IPs can access admin routes.
+ * When unset, all IPs are allowed (for dev/staging flexibility).
+ */
+export function adminIpGuard(req: Request, res: Response, next: NextFunction) {
+  const allowedRaw = process.env.ADMIN_ALLOWED_IPS;
+  if (!allowedRaw) return next(); // not configured — allow all
+
+  const allowed = new Set(allowedRaw.split(",").map(s => s.trim()).filter(Boolean));
+  const clientIp = req.ip || "";
+
+  if (!allowed.has(clientIp)) {
+    logSecurityEvent({
+      event: "admin.access_denied",
+      userId: (req as any).auth?.sub,
+      ip: clientIp,
+      metadata: { reason: "ip_not_allowed", route: req.originalUrl },
+    });
+    return res.status(403).json({ error: "Forbidden", message: "Access denied from this network" });
+  }
+  next();
+}
+
+// ─── Session Fingerprint Validation ──────────────────────────────────
+/**
+ * Validates that the admin request's User-Agent matches what was used at login.
+ * Detects token theft where the attacker uses a different browser/device.
+ * Logs a security event on mismatch but does not block (soft enforcement) —
+ * the event can trigger alerts in SIEM.
+ */
+export function adminSessionFingerprint(req: Request, res: Response, next: NextFunction) {
+  const auth = (req as any).auth as AuthPayload | undefined;
+  if (!auth) return next();
+
+  const currentUa = req.get("user-agent") || "";
+  // Store the first UA seen per session in a lightweight way via response header
+  // The actual device-binding enforcement is in token refresh (auth.ts),
+  // but here we log suspicious UA changes for admin sessions specifically
+  if (currentUa && auth.sub) {
+    const key = `admin_ua:${auth.sub}`;
+    const cached = adminUaCache.get(key);
+    if (cached && cached !== currentUa) {
+      logSecurityEvent({
+        event: "admin.access_denied",
+        userId: auth.sub,
+        ip: req.ip,
+        metadata: {
+          reason: "ua_mismatch",
+          expected: cached.substring(0, 50),
+          actual: currentUa.substring(0, 50),
+          route: req.originalUrl,
+        },
+      });
+    }
+    if (!cached) adminUaCache.set(key, currentUa);
+  }
+  next();
+}
+
+// Simple in-memory UA cache per admin session (cleared on restart, which is fine)
+const adminUaCache = new Map<string, string>();
+// Cleanup stale entries every 30 minutes
+setInterval(() => {
+  if (adminUaCache.size > 10_000) adminUaCache.clear();
+}, 30 * 60_000).unref();
+
+// ─── Audit Logger ────────────────────────────────────────────────────
 /**
  * Audit logger for admin actions. Logs every admin request with full context.
  */

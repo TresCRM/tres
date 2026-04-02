@@ -141,8 +141,8 @@ function SignInForm() {
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
       const ADMIN_ROLES = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL'];
       const isAdmin = user.roles?.some((r: string) => ADMIN_ROLES.includes(r));
-      if (passwordExpired) router.push('/settings/change-password');
-      else if (mfaSetupRequired) router.push('/settings/security?setup=required');
+      if (passwordExpired) router.push(isAdmin ? '/admin/security' : '/settings/change-password');
+      else if (mfaSetupRequired) router.push(isAdmin ? '/admin/security?setup=required' : '/settings/security?setup=required');
       else if (isAdmin) router.push('/admin');
       else router.push('/dashboard');
     } catch (err: any) {

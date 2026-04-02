@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { adminApi } from '@/lib/apiClient';
-import { Shield, AlertCircle, Loader2, Activity } from 'lucide-react';
+import { Shield, AlertCircle, Loader2, Activity, Download } from 'lucide-react';
 
 export default function AdminAuditPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -10,6 +10,7 @@ export default function AdminAuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [methodFilter, setMethodFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,7 +68,7 @@ export default function AdminAuditPage() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap">
         <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} className="px-3 py-2.5 border rounded-lg text-sm min-h-[44px]" aria-label="Filter by method">
           <option value="">All Methods</option>
           <option value="GET">GET</option>
@@ -75,6 +76,27 @@ export default function AdminAuditPage() {
           <option value="PUT">PUT</option>
           <option value="DELETE">DELETE</option>
         </select>
+        <button
+          onClick={async () => {
+            setExporting(true);
+            try {
+              const params: any = {};
+              if (methodFilter) params.method = methodFilter;
+              const res = await adminApi.audit.exportCsv(params);
+              const blob = new Blob([res.data], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch {} finally { setExporting(false); }
+          }}
+          disabled={exporting}
+          className="inline-flex items-center gap-2 px-4 py-2.5 border rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors min-h-[44px] disabled:opacity-50"
+        >
+          {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Export CSV
+        </button>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 p-4 flex items-start gap-3" role="alert"><AlertCircle size={18} className="text-red-500 mt-0.5" /><p className="text-sm text-red-700">{error}</p></div>}

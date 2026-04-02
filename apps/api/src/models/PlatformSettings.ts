@@ -1,5 +1,11 @@
 import mongoose, { Schema, Types } from "mongoose";
 
+export interface FeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string;
+}
+
 export interface PlatformSettingsDoc {
   _id: Types.ObjectId;
   key: string;
@@ -9,6 +15,7 @@ export interface PlatformSettingsDoc {
   maxTenantsPerUser: number;
   supportEmail: string;
   platformName: string;
+  featureFlags: FeatureFlag[];
   updatedBy: Types.ObjectId | null;
   updatedAt: Date;
 }
@@ -21,6 +28,14 @@ const PlatformSettingsSchema = new Schema<PlatformSettingsDoc>({
   maxTenantsPerUser: { type: Number, default: 3 },
   supportEmail: { type: String, default: "support@trescrm.com" },
   platformName: { type: String, default: "TRES CRM" },
+  featureFlags: {
+    type: [{
+      key: { type: String, required: true },
+      enabled: { type: Boolean, default: false },
+      description: { type: String, default: "" },
+    }],
+    default: [],
+  },
   updatedBy: { type: Schema.Types.ObjectId, default: null },
 }, { timestamps: true });
 

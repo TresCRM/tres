@@ -13,6 +13,12 @@ export const adminSettingsRouter = Router();
 
 adminSettingsRouter.use(requireAdminAuth, adminAudit);
 
+const FeatureFlagSchema = z.object({
+  key: z.string().min(1).max(100),
+  enabled: z.boolean(),
+  description: z.string().max(500).default(""),
+});
+
 const UpdateBody = z.object({
   maintenanceMode: z.boolean().optional(),
   signupEnabled: z.boolean().optional(),
@@ -20,6 +26,7 @@ const UpdateBody = z.object({
   maxTenantsPerUser: z.number().min(1).max(100).optional(),
   supportEmail: z.string().email().optional(),
   platformName: z.string().min(1).max(200).optional(),
+  featureFlags: z.array(FeatureFlagSchema).optional(),
 });
 
 // GET current settings

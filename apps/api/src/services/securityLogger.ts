@@ -32,7 +32,10 @@ export type SecurityEventType =
   | "auth.signup"
   | "auth.verify"
   | "admin.access_denied"
-  | "admin.action";
+  | "admin.action"
+  | "admin.mfa_blocked"
+  | "admin.ip_blocked"
+  | "admin.ua_mismatch";
 
 interface SecurityEvent {
   event: SecurityEventType;

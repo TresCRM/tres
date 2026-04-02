@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { adminApi } from '@/lib/apiClient';
-import { Settings, AlertCircle, Loader2, Save } from 'lucide-react';
+import { Settings, AlertCircle, Loader2, Save, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 export default function AdminSettingsPage() {
   const [data, setData] = useState<any>(null);
@@ -30,6 +30,7 @@ export default function AdminSettingsPage() {
         maxTenantsPerUser: data.maxTenantsPerUser,
         supportEmail: data.supportEmail,
         platformName: data.platformName,
+        featureFlags: (data.featureFlags || []).filter((f: any) => f.key),
       });
       setData(r.data.data);
       setSuccess('Settings saved');
@@ -95,6 +96,88 @@ export default function AdminSettingsPage() {
 
           <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors min-h-[44px] disabled:opacity-50">
             <Save size={16} /> {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+      )}
+
+      {/* Feature Flags */}
+      {data && (
+        <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold">Feature Flags</h2>
+              <p className="text-xs text-gray-500">Toggle features on or off across the platform.</p>
+            </div>
+            <button
+              onClick={() => setData((d: any) => ({
+                ...d,
+                featureFlags: [...(d.featureFlags || []), { key: '', enabled: false, description: '' }],
+              }))}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 transition-colors min-h-[40px]"
+            >
+              <Plus size={14} /> Add Flag
+            </button>
+          </div>
+
+          {(!data.featureFlags || data.featureFlags.length === 0) ? (
+            <p className="text-sm text-gray-400 text-center py-4">No feature flags configured.</p>
+          ) : (
+            <div className="space-y-3">
+              {data.featureFlags.map((flag: any, idx: number) => (
+                <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                  <button
+                    onClick={() => setData((d: any) => {
+                      const flags = [...d.featureFlags];
+                      flags[idx] = { ...flags[idx], enabled: !flags[idx].enabled };
+                      return { ...d, featureFlags: flags };
+                    })}
+                    className="mt-1 shrink-0"
+                    aria-label={flag.enabled ? 'Disable flag' : 'Enable flag'}
+                  >
+                    {flag.enabled
+                      ? <ToggleRight size={24} className="text-green-600" />
+                      : <ToggleLeft size={24} className="text-gray-400" />
+                    }
+                  </button>
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <input
+                      value={flag.key}
+                      onChange={e => setData((d: any) => {
+                        const flags = [...d.featureFlags];
+                        flags[idx] = { ...flags[idx], key: e.target.value.replace(/[^a-zA-Z0-9_.-]/g, '') };
+                        return { ...d, featureFlags: flags };
+                      })}
+                      placeholder="flag.key (e.g. enable_ai_summaries)"
+                      className="w-full px-3 py-1.5 border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                    <input
+                      value={flag.description}
+                      onChange={e => setData((d: any) => {
+                        const flags = [...d.featureFlags];
+                        flags[idx] = { ...flags[idx], description: e.target.value };
+                        return { ...d, featureFlags: flags };
+                      })}
+                      placeholder="Description"
+                      className="w-full px-3 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setData((d: any) => ({
+                      ...d,
+                      featureFlags: d.featureFlags.filter((_: any, i: number) => i !== idx),
+                    }))}
+                    className="mt-1 p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 shrink-0"
+                    aria-label="Remove flag"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors min-h-[44px] disabled:opacity-50">
+            <Save size={16} /> {saving ? 'Saving...' : 'Save Flags'}
           </button>
         </div>
       )}

@@ -46,12 +46,15 @@ api.interceptors.response.use(
   async (error) => {
     const { response, config } = error || {};
 
-    // MFA enforcement: redirect to setup if API returns mfa_required (only on console pages)
-    if (response?.status === 403 && response?.data?.error === 'mfa_required') {
+    // MFA enforcement: redirect to setup if API returns mfa_required
+    if (response?.status === 403 && (response?.data?.error === 'mfa_required' || response?.data?.error === 'admin_mfa_required')) {
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;
+        const isAdminPage = /^\/admin(\/|$)/.test(path);
         const isConsolePage = /^\/(dashboard|tickets|customers|staff|billing|settings|reports)/.test(path);
-        if (isConsolePage && !path.startsWith('/settings/security')) {
+        if (isAdminPage && !path.startsWith('/admin/security')) {
+          window.location.href = '/admin/security?setup=required';
+        } else if (isConsolePage && !path.startsWith('/settings/security')) {
           window.location.href = '/settings/security?setup=required';
         }
       }

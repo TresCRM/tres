@@ -192,6 +192,15 @@ export const adminApi = {
     list: (params?: { method?: string; status?: number; route?: string; actorId?: string; tenantId?: string; from?: string; to?: string; limit?: number; cursor?: string }) =>
       api.get('/admin/audit', { params }),
     stats: () => api.get('/admin/audit/stats'),
+    exportCsv: (params?: { method?: string; status?: number; route?: string; from?: string; to?: string }) =>
+      api.get('/admin/audit/export', { params, responseType: 'blob' }),
+  },
+
+  // Errors
+  errors: {
+    list: (params?: { http?: number; code?: string; route?: string; method?: string; tenantId?: string; from?: string; to?: string; limit?: number; cursor?: string }) =>
+      api.get('/admin/errors', { params }),
+    stats: () => api.get('/admin/errors/stats'),
   },
 
   // Settings

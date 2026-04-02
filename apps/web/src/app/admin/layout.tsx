@@ -11,7 +11,7 @@ import AuthGuard from '@/components/guards/AuthGuard';
 import {
   LayoutDashboard, Building2, Users, CreditCard, Ticket, BarChart3,
   FileText, Shield, Settings, Megaphone, Menu, X, Moon, Sun, LogOut,
-  ArrowLeft,
+  ArrowLeft, ShieldAlert, AlertTriangle, Lock,
 } from 'lucide-react';
 
 const nav = [
@@ -23,8 +23,11 @@ const nav = [
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/admin/content', label: 'Content', icon: FileText },
   { href: '/admin/audit', label: 'Audit Log', icon: Shield },
+  { href: '/admin/errors', label: 'Errors', icon: AlertTriangle },
+  { href: '/admin/roles', label: 'Roles & Perms', icon: Lock },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
   { href: '/admin/announcements', label: 'Announcements', icon: Megaphone },
+  { href: '/admin/security', label: 'Security', icon: ShieldAlert },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
