@@ -126,26 +126,35 @@ export default function LogoUploader({ value, onChange, onUploaded }: LogoUpload
       );
       if (!blob) throw new Error('Failed to process image');
 
-      // Upload via ImageKit (same as existing uploader)
-      const publicKey = process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY;
-      const endpoint = process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT;
+      // Try uploading to the API's upload endpoint if available,
+      // otherwise use a data URL (works for local dev / preview).
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+      let uploaded = false;
 
-      if (publicKey && endpoint) {
-        const body = new FormData();
-        body.append('file', blob, rawFile.name);
-        body.append('fileName', rawFile.name);
-        body.append('folder', 'trescrm/logos');
-        body.append('publicKey', publicKey);
-        const resp = await fetch(`${endpoint}/upload`, { method: 'POST', body });
-        const data = await resp.json();
-        if (data.url) {
-          onChange(data.url);
-          onUploaded?.([{ url: data.url, name: data.name, size: blob.size }]);
-        } else {
-          throw new Error('Upload failed');
+      if (apiBase) {
+        try {
+          const formData = new FormData();
+          formData.append('file', blob, rawFile.name);
+          const resp = await fetch(`${apiBase}/attachments/logo`, {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.url) {
+              onChange(data.url);
+              onUploaded?.([{ url: data.url, name: rawFile.name, size: blob.size }]);
+              uploaded = true;
+            }
+          }
+        } catch {
+          // API upload unavailable — fall through to data URL
         }
-      } else {
-        // No ImageKit configured — use data URL as fallback (dev mode)
+      }
+
+      if (!uploaded) {
+        // Local fallback: use data URL (no server needed)
         const dataUrl = canvas.toDataURL('image/png', 0.9);
         onChange(dataUrl);
       }
