@@ -16,7 +16,11 @@ import { requestContext } from "./middlewares/requestContext";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
 import { metricsMiddleware } from "./observability/metrics";
+import { correlationId } from "./observability/correlationId";
+import { initSentry, sentryRequestHandler, sentryErrorHandler } from "./observability/sentry";
 import { ENV } from "./config/env";
+
+initSentry();
 
 const log = pino({ transport: { target: "pino-pretty" } });
 export const app = express();
@@ -35,6 +39,8 @@ if (ENV.IS_PROD) {
 
 // Security + perf
 app.use(requestContext);
+app.use(sentryRequestHandler());
+app.use(correlationId);
 app.use(helmet());
 app.use(compression());
 app.use(cors({
@@ -82,6 +88,7 @@ mountDocs(app);
 // 404 + Errors
 app.use(activityHandler);
 // app.use(notFound);
+app.use(sentryErrorHandler());
 app.use(errorHandler);
 
 export default app;

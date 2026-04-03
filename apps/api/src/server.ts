@@ -1,3 +1,6 @@
+import { initTracing } from "./observability/tracing";
+initTracing();
+
 import { app } from "./app";
 import { connectMongo, disconnectMongo } from "./db/mongoose";
 import { attachWebsocket } from "./realtime/ws";
