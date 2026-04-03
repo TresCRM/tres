@@ -24,6 +24,5 @@ const WidgetTokenSchema = new Schema<WidgetTokenDoc>({
 }, { timestamps: true, versionKey: false });
 
 WidgetTokenSchema.index({ tenantId: 1 });
-WidgetTokenSchema.index({ token: 1 }, { unique: true });
 
 export const WidgetToken = mongoose.model<WidgetTokenDoc>("WidgetToken", WidgetTokenSchema);

@@ -1,16 +1,16 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Request } from "express";
 import { ENV } from "../config/env";
 
 const skip = () => ENV.DISABLE_RATE_LIMIT;
 
-/** Key generator: uses authenticated user ID if available, otherwise IP */
+/** Key generator: uses authenticated user ID if available, otherwise IP (IPv6-safe) */
 function userOrIpKey(req: Request): string {
   const auth = (req as any).auth;
   if (auth?.sub) return `user:${auth.sub}`;
   const apiKey = (req as any).apiKey;
   if (apiKey?.keyId) return `apikey:${apiKey.keyId}`;
-  return req.ip || "unknown";
+  return ipKeyGenerator(req.ip || "unknown");
 }
 
 export const globalLimiter = rateLimit({

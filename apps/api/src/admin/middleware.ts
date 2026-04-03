@@ -11,7 +11,7 @@
  *  5. requireAdminRole / requireAdminPermission — per-route RBAC
  */
 import type { Request, Response, NextFunction } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { verifyToken, asObjectId } from "../utils/auth";
 import type { AuthPayload } from "../types/auth";
 import {
@@ -110,7 +110,7 @@ export const adminRateLimiter = rateLimit({
   skip,
   keyGenerator: (req: Request) => {
     const auth = (req as any).auth;
-    return auth?.sub ? `admin:${auth.sub}` : req.ip || "unknown";
+    return auth?.sub ? `admin:${auth.sub}` : ipKeyGenerator(req.ip || "unknown");
   },
   message: { error: "rate_limited", message: "Too many admin requests. Try again later." },
 });
