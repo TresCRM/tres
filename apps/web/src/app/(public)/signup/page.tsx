@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { Formik, Form } from 'formik';
 import { z } from 'zod';
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import api from '@/lib/api';
 import { Spinner } from '@/components/ui/Loader';
-import ImageKitUploader from '@/components/forms/ImageKitUploader';
+import LogoUploader from '@/components/forms/LogoUploader';
 import useNetwork from '@/hooks/useNetwork';
 import { useSearchParams, useRouter } from 'next/navigation';
 
@@ -61,6 +61,83 @@ const signupPayloadSchema = z.object({
     emailFrom: z.email().optional(),
   }).partial(),
 });
+
+/* ---------------------------------------------
+   Color Picker with hex paste support
+--------------------------------------------- */
+function ColorPickerField({ id, label, value, onChange, hint }: {
+  id: string; label: string; value: string; onChange: (v: string) => void; hint?: string;
+}) {
+  const [hexInput, setHexInput] = useState(value);
+  const [valid, setValid] = useState(true);
+  const hexRegex = /^#([0-9a-fA-F]{3}){1,2}$/;
+
+  // Sync from parent (e.g. color picker changes)
+  useEffect(() => { setHexInput(value); setValid(true); }, [value]);
+
+  function handleTextChange(raw: string) {
+    // Auto-add # prefix if user pastes without it
+    let v = raw.trim();
+    if (v && !v.startsWith('#')) v = '#' + v;
+    setHexInput(v);
+
+    if (hexRegex.test(v)) {
+      setValid(true);
+      onChange(v);
+    } else {
+      setValid(v.length === 0);
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const pasted = e.clipboardData.getData('text').trim();
+    // If pasting a bare hex like "1a73e8" or "#1a73e8", handle it
+    if (pasted) {
+      e.preventDefault();
+      handleTextChange(pasted);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={hexRegex.test(value) ? value : '#000000'}
+          onChange={e => onChange(e.target.value)}
+          className="h-10 w-12 rounded-lg border border-gray-300 cursor-pointer p-0.5 shrink-0"
+          aria-label={`Pick ${label.toLowerCase()}`}
+        />
+        <div className="relative flex-1">
+          <input
+            id={id}
+            type="text"
+            value={hexInput}
+            onChange={e => handleTextChange(e.target.value)}
+            onPaste={handlePaste}
+            className={`h-10 px-3 rounded-md border w-full font-mono text-sm ${!valid ? 'border-red-300 bg-red-50/50' : ''}`}
+            placeholder="#1a73e8"
+            maxLength={7}
+            spellCheck={false}
+            aria-invalid={!valid}
+            aria-describedby={!valid ? `${id}-error` : undefined}
+          />
+          {!valid && hexInput.length > 0 && (
+            <p id={`${id}-error`} className="text-xs text-red-500 mt-0.5" role="alert">Enter a valid hex color (e.g. #1a73e8)</p>
+          )}
+        </div>
+        {/* Swatch preview */}
+        <div
+          className="h-10 w-10 rounded-md border shrink-0"
+          style={{ backgroundColor: hexRegex.test(value) ? value : '#eee' }}
+          aria-hidden="true"
+        />
+      </div>
+      {hint && <p className="text-xs text-gray-400">{hint}</p>}
+    </div>
+  );
+}
 
 /* ---------------------------------------------
    Component
@@ -293,68 +370,41 @@ function SignupWizardInner() {
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label htmlFor="brandingPrimary" className="text-sm font-medium text-gray-700">Primary color</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            id="brandingPrimary"
-                            type="color"
-                            value={v.brandingPrimary}
-                            onChange={e => setFieldValue('brandingPrimary', e.target.value)}
-                            className="h-10 w-12 rounded-lg border border-gray-300 cursor-pointer p-0.5"
-                            aria-label="Pick primary brand color"
-                          />
-                          <input
-                            type="text"
-                            value={v.brandingPrimary}
-                            onChange={e => setFieldValue('brandingPrimary', e.target.value)}
-                            className="h-10 px-3 rounded-md border w-full font-mono text-sm"
-                            placeholder="#1a73e8"
-                            maxLength={7}
-                          />
-                        </div>
-                        <p className="text-xs text-gray-400">Used for buttons, links, and accents</p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label htmlFor="brandingSurface" className="text-sm font-medium text-gray-700">Surface color</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            id="brandingSurface"
-                            type="color"
-                            value={v.brandingSurface}
-                            onChange={e => setFieldValue('brandingSurface', e.target.value)}
-                            className="h-10 w-12 rounded-lg border border-gray-300 cursor-pointer p-0.5"
-                            aria-label="Pick surface background color"
-                          />
-                          <input
-                            type="text"
-                            value={v.brandingSurface}
-                            onChange={e => setFieldValue('brandingSurface', e.target.value)}
-                            className="h-10 px-3 rounded-md border w-full font-mono text-sm"
-                            placeholder="#f1f3f4"
-                            maxLength={7}
-                          />
-                        </div>
-                        <p className="text-xs text-gray-400">Used for card and panel backgrounds</p>
-                      </div>
+                      <ColorPickerField
+                        id="brandingPrimary"
+                        label="Primary color"
+                        value={v.brandingPrimary}
+                        onChange={val => setFieldValue('brandingPrimary', val)}
+                        hint="Buttons, links, and accents"
+                      />
+                      <ColorPickerField
+                        id="brandingSurface"
+                        label="Surface color"
+                        value={v.brandingSurface}
+                        onChange={val => setFieldValue('brandingSurface', val)}
+                        hint="Card and panel backgrounds"
+                      />
                     </div>
 
                     {/* Live preview */}
                     <div className="rounded-lg border p-3 space-y-2">
                       <p className="text-xs font-medium text-gray-500">Preview</p>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <div className="h-8 px-4 rounded-md text-white text-xs font-medium flex items-center" style={{ backgroundColor: v.brandingPrimary }}>Button</div>
                         <div className="h-8 px-4 rounded-md text-xs font-medium flex items-center border" style={{ backgroundColor: v.brandingSurface, color: v.brandingPrimary }}>Card</div>
                         <span className="text-xs underline" style={{ color: v.brandingPrimary }}>Link text</span>
+                        <div className="h-8 px-3 rounded-md text-xs flex items-center border" style={{ backgroundColor: v.brandingSurface }}>
+                          <span style={{ color: v.brandingPrimary }}>&#9679;</span>
+                          <span className="ml-1.5 text-gray-600">Badge</span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-sm text-gray-700">Logo</label>
-                        <ImageKitUploader onUploaded={(files)=> setFieldValue('logoUrl', files[0]?.url || '')} />
-                        {v.logoUrl && <img src={v.logoUrl} alt="logo" className="h-10 mt-2" />}
-                      </div>
+                    <div className="grid md:grid-cols-2 gap-3 items-start">
+                      <LogoUploader
+                        value={v.logoUrl}
+                        onChange={url => setFieldValue('logoUrl', url)}
+                      />
                       <Input name="emailFrom" label="Emails from (optional)" placeholder="support@yourdomain.com" />
                     </div>
                   </>
