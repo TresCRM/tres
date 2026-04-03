@@ -103,7 +103,7 @@ async function processExpiredGrace(now: Date) {
 
 /**
  * Phase 2: Renew ACTIVE subscriptions whose period has ended.
- * For manual provider only — Stripe manages its own renewals via webhooks.
+ * For manual provider only — Paystack manages its own renewals via webhooks.
  */
 async function processRenewals(now: Date) {
   const due = await Subscription.find({
@@ -179,7 +179,7 @@ async function processRenewals(now: Date) {
 
 /**
  * Phase 3: Retry failed payments with exponential backoff.
- * Only for manual provider — Stripe handles its own retries.
+ * Only for manual provider — Paystack handles its own retries.
  */
 async function processPaymentRetries(now: Date) {
   const retryable = await Subscription.find({

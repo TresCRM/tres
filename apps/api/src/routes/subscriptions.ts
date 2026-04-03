@@ -287,15 +287,15 @@ subscriptionsRouter.get("/plans", cachePublic(300), async (_req, res) => {
   res.json({ data: plans });
 });
 
-// ─── Stripe Integration Endpoints ────────────────────────────────────
+// ─── Paystack Integration Endpoints ──────────────────────────────────
 
-// POST /api/v1/subscriptions/checkout — create Stripe checkout session
+// POST /api/v1/subscriptions/checkout — initialize Paystack transaction
 subscriptionsRouter.post(
   "/checkout",
   requireAuth,
   requirePermission("BILLING_MANAGE"),
   async (req, res) => {
-    const { getPaymentProvider } = await import("../billing/stripeProvider");
+    const { getPaymentProvider } = await import("../billing/paystackProvider");
     const provider = getPaymentProvider();
     if (!provider) {
       return res.status(503).json({ error: "payment_provider_unavailable", message: "Payment provider not configured" });
@@ -305,52 +305,51 @@ subscriptionsRouter.post(
     const body = z.object({
       planCode: z.string().min(1),
       interval: z.enum(["MONTH", "QUARTER", "SEMIANNUAL", "ANNUAL"]).default("MONTH"),
-      successUrl: z.string().url(),
-      cancelUrl: z.string().url(),
+      email: z.string().email(),
+      callbackUrl: z.string().url(),
     }).parse(req.body);
 
     const existingSub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) }).lean();
 
     try {
-      const session = await provider.createCheckoutSession({
+      const result = await provider.initializeTransaction({
         planCode: body.planCode as any,
         interval: body.interval as any,
         tenantId: auth.tid,
-        tenantSlug: "", // populated by frontend
-        successUrl: body.successUrl,
-        cancelUrl: body.cancelUrl,
-        stripeCustomerId: existingSub?.stripeCustomerId || undefined,
+        tenantSlug: "",
+        email: body.email,
+        callbackUrl: body.callbackUrl,
+        paystackCustomerCode: existingSub?.paystackCustomerCode || undefined,
       });
-      res.json({ data: session });
+      res.json({ data: result });
     } catch (err: any) {
       res.status(400).json({ error: "checkout_failed", message: err.message });
     }
   },
 );
 
-// POST /api/v1/subscriptions/portal — create Stripe billing portal session
+// POST /api/v1/subscriptions/verify — verify Paystack transaction after redirect
 subscriptionsRouter.post(
-  "/portal",
+  "/verify",
   requireAuth,
   requirePermission("BILLING_MANAGE"),
   async (req, res) => {
-    const { getPaymentProvider } = await import("../billing/stripeProvider");
+    const { getPaymentProvider } = await import("../billing/paystackProvider");
     const provider = getPaymentProvider();
     if (!provider) {
       return res.status(503).json({ error: "payment_provider_unavailable" });
     }
 
-    const auth = (req as AuthRequest).auth;
-    const sub = await Subscription.findOne({ tenantId: asObjectId(auth.tid) }).lean();
-    if (!sub?.stripeCustomerId) {
-      return res.status(400).json({ error: "no_stripe_customer", message: "No Stripe customer linked to this subscription" });
-    }
+    const { reference } = z.object({ reference: z.string().min(1) }).parse(req.body);
 
     try {
-      const session = await provider.createPortalSession(sub.stripeCustomerId);
-      res.json({ data: session });
+      const data = await provider.verifyTransaction(reference);
+      if (data.status !== "success") {
+        return res.status(400).json({ error: "payment_not_successful", status: data.status });
+      }
+      res.json({ data: { verified: true, reference: data.reference, amount: data.amount } });
     } catch (err: any) {
-      res.status(400).json({ error: "portal_failed", message: err.message });
+      res.status(400).json({ error: "verification_failed", message: err.message });
     }
   },
 );

@@ -3,7 +3,7 @@
  * Phase 12: Payment Integration & Billing Hardening tests.
  * Covers: invoice generation, invoice API, seat enforcement,
  * billing worker hardening (retries, dunning, auto-downgrade),
- * Stripe webhook handler, and subscription checkout endpoints.
+ * Paystack webhook handler, and subscription checkout endpoints.
  */
 import request from "supertest";
 import * as jwt from "jsonwebtoken";
@@ -434,23 +434,23 @@ describe("Billing Worker - Dunning Reminders", () => {
   });
 });
 
-// ─── Stripe Webhook Route ──────────────────────────────────────────
+// ─── Paystack Webhook Route ────────────────────────────────────────
 
-describe("Stripe Webhook Route", () => {
-  test("returns 400 without stripe-signature header", async () => {
+describe("Paystack Webhook Route", () => {
+  test("returns 400 without x-paystack-signature header", async () => {
     const res = await request(app)
-      .post("/api/v1/webhooks/stripe")
+      .post("/api/v1/webhooks/paystack")
       .set("Content-Type", "application/json")
       .send("{}");
-    // Either 400 (missing signature) or 503 (Stripe not configured)
+    // Either 400 (missing signature) or 503 (Paystack not configured)
     expect([400, 503]).toContain(res.status);
   });
 
   test("returns 400/503 with invalid signature", async () => {
     const res = await request(app)
-      .post("/api/v1/webhooks/stripe")
+      .post("/api/v1/webhooks/paystack")
       .set("Content-Type", "application/json")
-      .set("stripe-signature", "t=123,v1=invalid")
+      .set("x-paystack-signature", "invalid_hash")
       .send("{}");
     expect([400, 503]).toContain(res.status);
   });
@@ -458,26 +458,26 @@ describe("Stripe Webhook Route", () => {
 
 // ─── Subscription Checkout Endpoints ───────────────────────────────
 
-describe("Subscription Checkout/Portal", () => {
-  test("POST /subscriptions/checkout returns 503 when Stripe not configured", async () => {
+describe("Subscription Checkout (Paystack)", () => {
+  test("POST /subscriptions/checkout returns 503 when Paystack not configured", async () => {
     const res = await request(app)
       .post("/api/v1/subscriptions/checkout")
       .set("Authorization", `Bearer ${billingToken}`)
       .send({
         planCode: "CO-20",
         interval: "MONTH",
-        successUrl: "http://localhost:3000/billing?success=1",
-        cancelUrl: "http://localhost:3000/billing?canceled=1",
+        email: "bill@p12.local",
+        callbackUrl: "http://localhost:3000/billing?callback=1",
       });
     expect(res.status).toBe(503);
     expect(res.body.error).toBe("payment_provider_unavailable");
   });
 
-  test("POST /subscriptions/portal returns 503 when Stripe not configured", async () => {
+  test("POST /subscriptions/verify returns 503 when Paystack not configured", async () => {
     const res = await request(app)
-      .post("/api/v1/subscriptions/portal")
+      .post("/api/v1/subscriptions/verify")
       .set("Authorization", `Bearer ${billingToken}`)
-      .send({});
+      .send({ reference: "test_ref_123" });
     expect(res.status).toBe(503);
   });
 
@@ -488,8 +488,8 @@ describe("Subscription Checkout/Portal", () => {
       .send({
         planCode: "CO-20",
         interval: "MONTH",
-        successUrl: "http://localhost:3000",
-        cancelUrl: "http://localhost:3000",
+        email: "ro@p12.local",
+        callbackUrl: "http://localhost:3000",
       });
     expect(res.status).toBe(403);
   });
@@ -497,24 +497,24 @@ describe("Subscription Checkout/Portal", () => {
 
 // ─── Subscription Model Fields ─────────────────────────────────────
 
-describe("Subscription Model - New Fields", () => {
-  test("supports stripeCustomerId and stripeSubscriptionId", async () => {
-    const t = await Tenant.create({ slug: "stripe-fields", branding: { name: "SF" }, plan: "COMPANY", seats: 5 });
+describe("Subscription Model - Paystack Fields", () => {
+  test("supports paystackCustomerCode and paystackSubscriptionCode", async () => {
+    const t = await Tenant.create({ slug: "paystack-fields", branding: { name: "PF" }, plan: "COMPANY", seats: 5 });
     const sub = await Subscription.create({
       tenantId: t._id, planCode: "CO-20", status: "ACTIVE", seats: 20,
       interval: "MONTH",
       currentPeriodStart: new Date(),
       currentPeriodEnd: addDays(new Date(), 30),
       entitlements: {},
-      stripeCustomerId: "cus_test123",
-      stripeSubscriptionId: "sub_test456",
-      provider: "stripe",
+      paystackCustomerCode: "CUS_test123",
+      paystackSubscriptionCode: "SUB_test456",
+      provider: "paystack",
     });
 
     const found = await Subscription.findById(sub._id).lean();
-    expect(found!.stripeCustomerId).toBe("cus_test123");
-    expect(found!.stripeSubscriptionId).toBe("sub_test456");
-    expect(found!.provider).toBe("stripe");
+    expect(found!.paystackCustomerCode).toBe("CUS_test123");
+    expect(found!.paystackSubscriptionCode).toBe("SUB_test456");
+    expect(found!.provider).toBe("paystack");
   });
 
   test("supports nextRetryAt field", async () => {

@@ -24,8 +24,8 @@ export interface SubscriptionDoc {
   failedPaymentCount: number;
   nextRetryAt: Date | null;
   autoRenew: boolean;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
+  paystackCustomerCode: string | null;
+  paystackSubscriptionCode: string | null;
   entitlements: Entitlements;
   createdAt: Date; 
   updatedAt: Date;
@@ -49,15 +49,15 @@ const SubscriptionSchema = new Schema<SubscriptionDoc>({
   canceledAt:         { type: Date, default: null },
 
   // billing meta
-  provider: { type: String, default: "manual" },  // "manual" | "stripe"
+  provider: { type: String, default: "manual" },  // "manual" | "paystack"
   lastPaymentAt: { type: Date, default: null },
   failedPaymentCount: { type: Number, default: 0 },
   nextRetryAt: { type: Date, default: null },      // next payment retry time (exponential backoff)
   autoRenew: { type: Boolean, default: true },
 
-  // Stripe integration (null when provider=manual)
-  stripeCustomerId: { type: String, default: null, sparse: true },
-  stripeSubscriptionId: { type: String, default: null, sparse: true },
+  // Paystack integration (null when provider=manual)
+  paystackCustomerCode: { type: String, default: null, sparse: true },
+  paystackSubscriptionCode: { type: String, default: null, sparse: true },
 
   // entitlements snapshot for fast checks
   entitlements: { type: Schema.Types.Mixed, default: {} },
