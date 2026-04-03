@@ -69,19 +69,19 @@ type Step = 1|2|3|4;
 
 function StepIndicator({ steps, currentStep }: { steps: { n: number; label: string }[]; currentStep: number }) {
   function cls(sn: number) {
-    if (currentStep > sn) return 'bg-green-500 text-white';
-    if (currentStep === sn) return 'bg-indigo-600 text-white shadow-md';
-    return 'bg-gray-100 text-gray-400 border';
+    if (currentStep > sn) return 'bg-[#1a73e8] text-white';
+    if (currentStep === sn) return 'bg-[#1a73e8] text-white shadow-md ring-4 ring-[#1a73e8]/20';
+    return 'bg-[#e8f0fe] text-[#1a73e8]/60 border border-[#1a73e8]/20';
   }
   return (
     <div className="flex items-center justify-center gap-2 text-sm" role="navigation" aria-label="Signup progress">
       {steps.map((s, i) => (
         <div key={s.n} className="flex items-center gap-2">
-          <div className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold ${cls(s.n)}`}>
+          <div className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold transition-all ${cls(s.n)}`}>
             {currentStep > s.n ? '\u2713' : s.n}
           </div>
           <span className={`hidden sm:block text-xs ${currentStep >= s.n ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>{s.label}</span>
-          {i !== steps.length - 1 && <div className={`w-8 sm:w-12 h-0.5 rounded ${currentStep > s.n ? 'bg-green-400' : 'bg-gray-200'}`} />}
+          {i !== steps.length - 1 && <div className={`w-8 sm:w-12 h-0.5 rounded transition-colors ${currentStep > s.n ? 'bg-[#1a73e8]' : 'bg-[#e8f0fe]'}`} />}
         </div>
       ))}
     </div>
@@ -293,8 +293,60 @@ function SignupWizardInner() {
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-3">
-                      <Input name="brandingPrimary" label="Primary color (hex)" placeholder="#1a73e8" />
-                      <Input name="brandingSurface" label="Surface color (hex)" placeholder="#f1f3f4" />
+                      <div className="space-y-1.5">
+                        <label htmlFor="brandingPrimary" className="text-sm font-medium text-gray-700">Primary color</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="brandingPrimary"
+                            type="color"
+                            value={v.brandingPrimary}
+                            onChange={e => setFieldValue('brandingPrimary', e.target.value)}
+                            className="h-10 w-12 rounded-lg border border-gray-300 cursor-pointer p-0.5"
+                            aria-label="Pick primary brand color"
+                          />
+                          <input
+                            type="text"
+                            value={v.brandingPrimary}
+                            onChange={e => setFieldValue('brandingPrimary', e.target.value)}
+                            className="h-10 px-3 rounded-md border w-full font-mono text-sm"
+                            placeholder="#1a73e8"
+                            maxLength={7}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-400">Used for buttons, links, and accents</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label htmlFor="brandingSurface" className="text-sm font-medium text-gray-700">Surface color</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="brandingSurface"
+                            type="color"
+                            value={v.brandingSurface}
+                            onChange={e => setFieldValue('brandingSurface', e.target.value)}
+                            className="h-10 w-12 rounded-lg border border-gray-300 cursor-pointer p-0.5"
+                            aria-label="Pick surface background color"
+                          />
+                          <input
+                            type="text"
+                            value={v.brandingSurface}
+                            onChange={e => setFieldValue('brandingSurface', e.target.value)}
+                            className="h-10 px-3 rounded-md border w-full font-mono text-sm"
+                            placeholder="#f1f3f4"
+                            maxLength={7}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-400">Used for card and panel backgrounds</p>
+                      </div>
+                    </div>
+
+                    {/* Live preview */}
+                    <div className="rounded-lg border p-3 space-y-2">
+                      <p className="text-xs font-medium text-gray-500">Preview</p>
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 px-4 rounded-md text-white text-xs font-medium flex items-center" style={{ backgroundColor: v.brandingPrimary }}>Button</div>
+                        <div className="h-8 px-4 rounded-md text-xs font-medium flex items-center border" style={{ backgroundColor: v.brandingSurface, color: v.brandingPrimary }}>Card</div>
+                        <span className="text-xs underline" style={{ color: v.brandingPrimary }}>Link text</span>
+                      </div>
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-3">
@@ -332,7 +384,7 @@ function SignupWizardInner() {
         ) : (
           <div className="space-y-5">
             <div className="text-center pb-2">
-              <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <div className="w-12 h-12 bg-[#e8f0fe] rounded-full flex items-center justify-center mx-auto mb-3">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary,#4F46E5)" strokeWidth="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
               </div>
               <p className="text-sm text-gray-700">
@@ -398,7 +450,7 @@ export default function SignupWizard() {
     <Suspense fallback={
       <div className="min-h-[calc(100vh-200px)] flex items-center justify-center" role="status" aria-label="Loading signup form">
         <div className="text-center">
-          <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div className="w-14 h-14 bg-[#e8f0fe] rounded-2xl flex items-center justify-center mx-auto mb-4">
             <div className="animate-spin h-7 w-7 border-3 border-gray-300 border-t-[var(--brand-primary,#4F46E5)] rounded-full" />
           </div>
           <p className="text-sm text-gray-500">Loading signup...</p>
