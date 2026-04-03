@@ -25,6 +25,7 @@ import { authLimiter, strictLimiter } from "../middlewares/security";
 import { adminRouter } from "../admin/routes";
 import { invoicesRouter } from "./invoices";
 import { paystackWebhookRouter } from "./paystackWebhook";
+import { imagekitRouter } from "./imagekit";
 import { isShuttingDown } from "../lifecycle";
 import { noCache } from "../middlewares/cacheControl";
 import { getMetricsText } from "../observability/metrics";
@@ -82,6 +83,9 @@ export function mountRoutes(app: Express) {
   app.use("/api/v1/webhooks", requireMfaForPrivileged, webhooksRouter);
   app.use("/api/v1/ext", extRouter); // ext uses API key auth, not JWT — no MFA
   app.use("/api/v1/invoices", requireMfaForPrivileged, invoicesRouter);
+
+  // ImageKit upload auth — no user auth required (signup uses it before login)
+  app.use("/api/v1/imagekit", imagekitRouter);
 
   // Paystack webhook — raw body, no auth (HMAC SHA-512 signature-verified)
   app.use("/api/v1/webhooks/paystack", paystackWebhookRouter);

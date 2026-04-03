@@ -126,35 +126,51 @@ export default function LogoUploader({ value, onChange, onUploaded }: LogoUpload
       );
       if (!blob) throw new Error('Failed to process image');
 
-      // Try uploading to the API's upload endpoint if available,
-      // otherwise use a data URL (works for local dev / preview).
+      // Upload to ImageKit via server-signed auth flow:
+      //  1. GET auth params from API (token, expire, signature, publicKey)
+      //  2. POST file + auth params to ImageKit upload API
+      //  3. Fall back to data URL if either step fails
       const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
       let uploaded = false;
 
       if (apiBase) {
         try {
-          const formData = new FormData();
-          formData.append('file', blob, rawFile.name);
-          const resp = await fetch(`${apiBase}/attachments/logo`, {
-            method: 'POST',
-            body: formData,
-            credentials: 'include',
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data?.url) {
-              onChange(data.url);
-              onUploaded?.([{ url: data.url, name: rawFile.name, size: blob.size }]);
-              uploaded = true;
+          // Step 1: Get signed auth params from server
+          const authResp = await fetch(`${apiBase}/imagekit/auth`, { credentials: 'include' });
+          if (authResp.ok) {
+            const auth = await authResp.json();
+
+            // Step 2: Upload directly to ImageKit with signed params
+            const formData = new FormData();
+            formData.append('file', blob, rawFile.name);
+            formData.append('fileName', rawFile.name);
+            formData.append('folder', '/trescrm/logos');
+            formData.append('publicKey', auth.publicKey);
+            formData.append('token', auth.token);
+            formData.append('expire', String(auth.expire));
+            formData.append('signature', auth.signature);
+
+            const uploadResp = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (uploadResp.ok) {
+              const data = await uploadResp.json();
+              if (data?.url) {
+                onChange(data.url);
+                onUploaded?.([{ url: data.url, name: data.name || rawFile.name, size: blob.size }]);
+                uploaded = true;
+              }
             }
           }
         } catch {
-          // API upload unavailable — fall through to data URL
+          // ImageKit upload failed — fall through to data URL
         }
       }
 
       if (!uploaded) {
-        // Local fallback: use data URL (no server needed)
+        // Local fallback: use data URL (no server/ImageKit needed)
         const dataUrl = canvas.toDataURL('image/png', 0.9);
         onChange(dataUrl);
       }

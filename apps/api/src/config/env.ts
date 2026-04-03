@@ -131,6 +131,12 @@ export const ENV = {
   PASSWORD_MIN_LENGTH: int("PASSWORD_MIN_LENGTH", 10),
   PASSWORD_MAX_AGE_DAYS: int("PASSWORD_MAX_AGE_DAYS", 90),
 
+  // --- ImageKit (file uploads) ---
+  IMAGEKIT_PUBLIC_KEY: optional("IMAGEKIT_PUBLIC_KEY", ""),
+  IMAGEKIT_PRIVATE_KEY: optional("IMAGEKIT_PRIVATE_KEY", ""),
+  IMAGEKIT_URL_ENDPOINT: optional("IMAGEKIT_URL_ENDPOINT", ""),
+  IMAGEKIT_ID: optional("IMAGEKIT_ID", ""),
+
   // --- Platform Admin ---
   ADMIN_EMAIL: optional("ADMIN_EMAIL", "admin@trescrm.local"),
   ADMIN_PASSWORD: optional("ADMIN_PASSWORD", isTest ? "AdminPass123!" : ""),
