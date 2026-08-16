@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Ticket, User, Home, LogIn, Activity, LogOut } from 'lucide-react';
@@ -15,7 +15,7 @@ interface TenantBranding {
   customGreeting?: string;
 }
 
-export default function PortalLayout({ children }: { children: React.ReactNode }) {
+function PortalLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { tenantSlug, qs, isAuthed, signOut } = usePortalAuth();
 
@@ -118,5 +118,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         {children}
       </main>
     </div>
+  );
+}
+
+export default function PortalLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[var(--brand-bg,#f9fafb)]" />}>
+      <PortalLayoutInner>{children}</PortalLayoutInner>
+    </Suspense>
   );
 }

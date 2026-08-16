@@ -137,7 +137,7 @@ export default function WebhooksPage() {
                   <button onClick={() => handleTest(h._id)} disabled={testing === h._id} className="p-2 min-h-[44px] min-w-[44px] rounded-md hover:bg-gray-100 text-gray-500" title="Test">
                     {testing === h._id ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                   </button>
-                  {testResult?.id === h._id && (testResult.ok ? <CheckCircle size={16} className="text-green-500" /> : <AlertTriangle size={16} className="text-red-500" />)}
+                  {testResult && testResult.id === h._id && (testResult.ok ? <CheckCircle size={16} className="text-green-500" /> : <AlertTriangle size={16} className="text-red-500" />)}
                   <button onClick={() => setConfirmDelete(h._id)} className="p-2 min-h-[44px] min-w-[44px] rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
                 </div>
               </div>

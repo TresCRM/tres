@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { mfaApi, authApi } from '@/lib/apiClient';
 import { ShieldCheck, ShieldOff, QrCode, Copy, Download, Loader2, AlertCircle, CheckCircle2, Eye, EyeOff, Lock, AlertTriangle } from 'lucide-react';
 
 type Step = 'status' | 'setup' | 'verify' | 'recovery' | 'disable' | 'change-password';
 
-export default function SecuritySettingsPage() {
+function SecuritySettingsInner() {
   const params = useSearchParams();
   const setupRequired = params.get('setup') === 'required';
   const [step, setStep] = useState<Step>('status');
@@ -330,5 +330,13 @@ export default function SecuritySettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SecuritySettingsPage() {
+  return (
+    <Suspense fallback={<div className="animate-pulse h-64 bg-gray-50 rounded-xl" />}>
+      <SecuritySettingsInner />
+    </Suspense>
   );
 }

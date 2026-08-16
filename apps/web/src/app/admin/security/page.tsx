@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { mfaApi, authApi } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/authStore';
@@ -12,7 +12,7 @@ import {
 
 type Step = 'status' | 'setup' | 'verify' | 'recovery' | 'disable' | 'change-password';
 
-export default function AdminSecurityPage() {
+function AdminSecurityInner() {
   const params = useSearchParams();
   const setupRequired = params.get('setup') === 'required';
   const { user } = useAuthStore();
@@ -460,5 +460,13 @@ export default function AdminSecurityPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AdminSecurityPage() {
+  return (
+    <Suspense fallback={<div className="animate-pulse h-64 bg-gray-50 rounded-xl" />}>
+      <AdminSecurityInner />
+    </Suspense>
   );
 }

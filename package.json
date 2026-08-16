@@ -33,6 +33,8 @@
     "coverage:open": "start \"\" coverage/lcov-report/index.html",
     "audit:security": "pnpm audit --prod --audit-level=high",
     "audit:full": "pnpm audit",
+    "lint": "pnpm --filter web lint",
+    "typecheck": "pnpm --filter web typecheck && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/workers/tsconfig.json --noEmit",
     "docs:gen": "ts-node apps/api/src/docs/generate.ts",
     "docs:types": "openapi-typescript apps/api/openapi.json -o packages/types/src/openapi.ts",
     "dev:workers": "nodemon -w apps/workers/src -e ts,json -x \"ts-node apps/workers/src/index.ts\"",
@@ -86,7 +88,7 @@
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -142,5 +144,16 @@
     "ws": "^8.18.3",
     "zod": "^4.1.12",
     "zustand": "^5.0.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": "^5.11.0",
+      "handlebars": "^4.7.9",
+      "protobufjs": "^7.5.5",
+      "shell-quote": "^1.10.0",
+      "tar": "^7.5.22",
+      "glob": "^10.5.0",
+      "jws": "^3.2.3"
+    }
   }
 }

@@ -48,14 +48,12 @@ function sendToAnalytics(metric: Metric) {
 
 export function reportWebVitals() {
   import('web-vitals')
-    .then(({ onCLS, onFID, onFCP, onLCP, onTTFB, onINP }) => {
+    .then(({ onCLS, onFCP, onLCP, onTTFB, onINP }) => {
       onCLS(sendToAnalytics);
       onFCP(sendToAnalytics);
       onLCP(sendToAnalytics);
       onTTFB(sendToAnalytics);
-      // FID is deprecated in favor of INP but report both when available
-      if (onFID) onFID(sendToAnalytics);
-      if (onINP) onINP(sendToAnalytics);
+      onINP(sendToAnalytics);
     })
     .catch(() => {
       // web-vitals not installed; silently skip
