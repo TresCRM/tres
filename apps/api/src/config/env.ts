@@ -137,6 +137,16 @@ export const ENV = {
   IMAGEKIT_URL_ENDPOINT: optional("IMAGEKIT_URL_ENDPOINT", ""),
   IMAGEKIT_ID: optional("IMAGEKIT_ID", ""),
 
+  // --- Google OAuth (optional — feature disabled when GOOGLE_CLIENT_ID is empty) ---
+  GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID", ""),
+  GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET", ""),
+  GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL", ""),
+
+  // --- Microsoft OAuth (optional — feature disabled when MICROSOFT_CLIENT_ID is empty) ---
+  MICROSOFT_CLIENT_ID: optional("MICROSOFT_CLIENT_ID", ""),
+  MICROSOFT_CLIENT_SECRET: optional("MICROSOFT_CLIENT_SECRET", ""),
+  MICROSOFT_CALLBACK_URL: optional("MICROSOFT_CALLBACK_URL", ""),
+
   // --- Platform Admin ---
   ADMIN_EMAIL: optional("ADMIN_EMAIL", "admin@trescrm.local"),
   ADMIN_PASSWORD: optional("ADMIN_PASSWORD", isTest ? "AdminPass123!" : ""),

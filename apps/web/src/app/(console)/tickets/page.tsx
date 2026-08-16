@@ -2,13 +2,16 @@
 
 import { useState } from 'react';
 import { useTickets, useCreateTicket, useCloseTicket, useReopenTicket } from '@/hooks/useApi';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import Link from 'next/link';
 import { useDebounce } from '@/hooks/useDebounce';
 import { SkeletonTicketList } from '@/components/ui/Skeleton';
 import { timeAgo } from '@/lib/timeAgo';
-import { normalizeFormData, subjectRules, bodyRules, emailRules } from '@/lib/validation';
+import { normalizeFormData, subjectRules, emailRules } from '@/lib/validation';
 import { Loader2 } from 'lucide-react';
+import RichTextField, { isRichTextEmpty } from '@/components/editor/RichTextField';
+import AttachmentUploader from '@/components/attachments/AttachmentUploader';
+import { ticketsApi } from '@/lib/apiClient';
 
 export default function TicketsPage() {
   const [filters, setFilters] = useState<{ status?: string; priority?: string; q?: string }>({});
@@ -19,14 +22,41 @@ export default function TicketsPage() {
   const reopenMutation = useReopenTicket();
   const [showCreate, setShowCreate] = useState(false);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<{
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<{
     subject: string; body: string; priority: string; customerEmail: string;
-  }>({ defaultValues: { priority: 'MEDIUM' } });
+  }>({ defaultValues: { priority: 'MEDIUM', body: '' } });
+
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
 
   const onCreateSubmit = async (data: any) => {
-    await createMutation.mutateAsync(normalizeFormData(data));
-    setShowCreate(false);
-    reset();
+    setAttachmentError('');
+    const normalized = normalizeFormData(data);
+    const result: any = await createMutation.mutateAsync(normalized);
+    const newId = result?.data?._id;
+
+    if (newId && pendingFiles.length) {
+      setUploadingAttachments(true);
+      try {
+        for (const file of pendingFiles) {
+          await ticketsApi.uploadAttachment(newId, file);
+        }
+      } catch (e: any) {
+        setAttachmentError(
+          e?.response?.data?.message
+          || 'Ticket was created but one or more attachments failed to upload.'
+        );
+      } finally {
+        setUploadingAttachments(false);
+      }
+    }
+
+    if (!attachmentError) {
+      setShowCreate(false);
+      setPendingFiles([]);
+      reset();
+    }
   };
 
   return (
@@ -50,7 +80,12 @@ export default function TicketsPage() {
           aria-label="Filter by status"
         >
           <option value="">All Status</option>
-          <option value="ACTIVE">Active</option>
+          <option value="OPEN">Open</option>
+          <option value="ASSIGNED">Assigned</option>
+          <option value="IN_PROGRESS">In Progress</option>
+          <option value="AWAITING_CUSTOMER">Awaiting Customer</option>
+          <option value="TRANSFERRED">Transferred</option>
+          <option value="RESOLVED">Resolved</option>
           <option value="CLOSED">Closed</option>
           <option value="REOPENED">Reopened</option>
         </select>
@@ -64,6 +99,7 @@ export default function TicketsPage() {
           <option value="LOW">Low</option>
           <option value="MEDIUM">Medium</option>
           <option value="HIGH">High</option>
+          <option value="CRITICAL">Critical</option>
         </select>
         <input
           type="search"
@@ -85,8 +121,30 @@ export default function TicketsPage() {
           </div>
           <div>
             <label htmlFor="body" className="block text-sm font-medium mb-1">Description</label>
-            <textarea id="body" rows={3} {...register('body', bodyRules)} aria-invalid={!!errors.body} aria-describedby={errors.body ? 'body-err' : undefined} className="w-full border rounded-md px-3 py-2 text-sm" />
-            {errors.body && <p id="body-err" role="alert" className="text-red-500 text-xs mt-1">{errors.body.message}</p>}
+            <Controller
+              control={control}
+              name="body"
+              rules={{ validate: v => !isRichTextEmpty(v) || 'Description is required' }}
+              render={({ field }) => (
+                <RichTextField
+                  id="body"
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  placeholder="Describe the issue…"
+                  ariaInvalid={!!errors.body}
+                  ariaDescribedBy={errors.body ? 'body-err' : undefined}
+                />
+              )}
+            />
+            {errors.body && <p id="body-err" role="alert" className="text-red-500 text-xs mt-1">{errors.body.message as string}</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Attachments</label>
+            <AttachmentUploader
+              mode="deferred"
+              files={pendingFiles}
+              onChange={setPendingFiles}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -95,6 +153,7 @@ export default function TicketsPage() {
                 <option value="LOW">Low</option>
                 <option value="MEDIUM">Medium</option>
                 <option value="HIGH">High</option>
+                <option value="CRITICAL">Critical</option>
               </select>
             </div>
             <div>
@@ -102,10 +161,13 @@ export default function TicketsPage() {
               <input id="customerEmail" type="email" {...register('customerEmail', { ...emailRules, required: false })} aria-invalid={!!errors.customerEmail} aria-describedby={errors.customerEmail ? 'customerEmail-err' : undefined} className="w-full border rounded-md px-3 py-2 text-sm" />
             </div>
           </div>
-          <button type="submit" disabled={createMutation.isPending} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--brand-primary,#4F46E5)] text-white rounded-lg font-medium text-sm min-h-[44px]">
-            {createMutation.isPending ? <><Loader2 size={16} className="animate-spin" /> Creating...</> : 'Create Ticket'}
+          <button type="submit" disabled={createMutation.isPending || uploadingAttachments} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[var(--brand-primary,#4F46E5)] text-white rounded-lg font-medium text-sm min-h-[44px]">
+            {createMutation.isPending || uploadingAttachments
+              ? <><Loader2 size={16} className="animate-spin" /> {uploadingAttachments ? 'Uploading attachments...' : 'Creating...'}</>
+              : 'Create Ticket'}
           </button>
           {createMutation.isError && <p className="text-red-500 text-sm" role="alert">Failed to create ticket</p>}
+          {attachmentError && <p className="text-red-500 text-sm" role="alert">{attachmentError}</p>}
         </form>
       )}
 
@@ -124,11 +186,18 @@ export default function TicketsPage() {
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    t.status === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+                    t.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+                    t.status === 'ASSIGNED' ? 'bg-blue-100 text-blue-700' :
+                    t.status === 'IN_PROGRESS' ? 'bg-indigo-100 text-indigo-700' :
+                    t.status === 'AWAITING_CUSTOMER' ? 'bg-amber-100 text-amber-700' :
+                    t.status === 'TRANSFERRED' ? 'bg-purple-100 text-purple-700' :
+                    t.status === 'RESOLVED' ? 'bg-teal-100 text-teal-700' :
                     t.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' :
-                    'bg-yellow-100 text-yellow-700'
-                  }`}>{t.status}</span>
+                    t.status === 'REOPENED' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>{t.status.replace(/_/g, ' ')}</span>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    t.priority === 'CRITICAL' ? 'bg-red-200 text-red-800' :
                     t.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
                     t.priority === 'MEDIUM' ? 'bg-orange-100 text-orange-600' :
                     'bg-blue-100 text-blue-600'

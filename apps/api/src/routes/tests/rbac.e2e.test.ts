@@ -385,7 +385,7 @@ describe("CUSTOMER role -- Public ticket endpoints (Phase 2.4)", () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.data.ticketId).toBeTruthy();
-    expect(res.body.data.status).toBe("ACTIVE");
+    expect(res.body.data.status).toBe("OPEN");
     expect(res.body.data.trackingUrl).toBeTruthy(); // exposed in test mode
     ticketId = res.body.data.ticketId;
 
@@ -400,7 +400,7 @@ describe("CUSTOMER role -- Public ticket endpoints (Phase 2.4)", () => {
       .get(`/public/tickets/${ticketId}?token=${encodeURIComponent(trackingToken)}`);
     expect(res.status).toBe(200);
     expect(res.body.data.subject).toBe("I need help");
-    expect(res.body.data.status).toBe("ACTIVE");
+    expect(res.body.data.status).toBe("OPEN");
     expect(res.body.data.comments).toBeDefined();
   });
 

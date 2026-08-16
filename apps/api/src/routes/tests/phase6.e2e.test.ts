@@ -11,6 +11,7 @@ import { User } from "../../models/User";
 import { Tenant } from "../../models/Tenant";
 import { ApiKey } from "../../models/ApiKey";
 import { Webhook } from "../../models/Webhook";
+import { Ticket } from "../../models/Ticket";
 import { hashPassword, signAccessToken } from "../../utils/auth";
 import type { Role } from "../../../../../packages/types/src/roles";
 
@@ -61,7 +62,7 @@ describe("API Key Management (Phase 6.1)", () => {
       .send({ name: "My Key", scopes: ["tickets:read", "tickets:write"] });
     expect(res.status).toBe(201);
     expect(res.body.key).toBeTruthy();
-    expect(res.body.key).toMatch(/^tcrm_/);
+    expect(res.body.key).toMatch(/^sk_live_/);
     expect(res.body.data.name).toBe("My Key");
     expect(res.body.data.prefix).toBeTruthy();
     expect(res.body.data.scopes).toEqual(["tickets:read", "tickets:write"]);
@@ -222,7 +223,7 @@ describe("External Ticket API (Phase 6.2)", () => {
   });
 
   test("list tickets with filters", async () => {
-    const res = await request(app).get("/api/v1/ext/tickets?status=ACTIVE&priority=HIGH")
+    const res = await request(app).get("/api/v1/ext/tickets?status=OPEN&priority=HIGH")
       .set("X-API-Key", apiKey);
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThanOrEqual(1);
@@ -283,6 +284,8 @@ describe("External Ticket API (Phase 6.2)", () => {
   });
 
   test("duplicate externalId returns 409", async () => {
+    // Ensure unique index is built (may be deferred in memory MongoDB)
+    await Ticket.ensureIndexes();
     const res = await request(app).post("/api/v1/ext/tickets")
       .set("X-API-Key", apiKey)
       .send({ subject: "Dup", body: "test", customerEmail: "d@t.com", externalId: "EXT-001" });

@@ -174,7 +174,7 @@ describe("Widget Ticket Flow (Phase 6b.3)", () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.data.ticketId).toBeTruthy();
-    expect(res.body.data.status).toBe("ACTIVE");
+    expect(res.body.data.status).toBe("OPEN");
     expect(res.body.trackingToken).toBeTruthy(); // exposed in test mode
     ticketId = res.body.data.ticketId;
     trackingToken = res.body.trackingToken;
@@ -185,7 +185,7 @@ describe("Widget Ticket Flow (Phase 6b.3)", () => {
       .get(`/public/widget/tickets/${ticketId}?trackingToken=${encodeURIComponent(trackingToken)}`);
     expect(res.status).toBe(200);
     expect(res.body.data.subject).toBe("Help from widget");
-    expect(res.body.data.status).toBe("ACTIVE");
+    expect(res.body.data.status).toBe("OPEN");
     expect(res.body.data.comments).toBeDefined();
   });
 
@@ -287,7 +287,7 @@ describe("Widget Security (Phase 6b.6)", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("ticket_closed");
     // Restore
-    await Ticket.updateOne({ _id: ticketId }, { status: "ACTIVE" });
+    await Ticket.updateOne({ _id: ticketId }, { status: "OPEN" });
   });
 
   test("AGENT cannot manage widget tokens (no SETTINGS_UPDATE)", async () => {

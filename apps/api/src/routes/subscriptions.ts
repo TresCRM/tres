@@ -6,9 +6,7 @@ import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { Subscription } from "../models/Subscription";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
-import { Plan } from "../models/Plan";
 import { registry } from "../docs/swagger";
-import { badRequest } from "../utils/http";
 import { 
   getPlanByCode, 
   priceForInterval, 
@@ -17,7 +15,6 @@ import {
   Interval 
 } from "../billing/plans";
 import { sendEmail } from "../services/mailer";
-import { resolvePlan } from "../billing/plans";
 import { addMonths } from "date-fns";
 import { cachePublic } from "../middlewares/cacheControl";
 
@@ -141,76 +138,52 @@ registry.registerPath({
 
 /* ---------- Routes ---------- */
 
-// Upsert/activate
+// Upsert/activate — simple plan activation (manual provider)
 subscriptionsRouter.post(
   "/",
   requireAuth,
   requirePermission("BILLING_MANAGE"),
   async (req, res) => {
-    const auth = (req as AuthRequest).auth;
-    console.log("ENTRY", 148, auth.tid);
-    const Body = z.object({
-      planCode: z.string(),
-      prepayMonths: z.number().int().min(1).max(12).optional().default(1),
-      startNow: z.boolean().optional().default(true)
-    }).loose();
+    try {
+      const auth = (req as AuthRequest).auth;
+      const body = z.object({
+        planCode: z.string().min(1),
+        prepayMonths: z.number().int().min(1).max(12).optional().default(1),
+        interval: z.enum(["MONTH", "QUARTER", "SEMIANNUAL", "ANNUAL"]).optional().default("MONTH"),
+      }).parse(req.body);
 
-    const { planCode, prepayMonths, startNow } = Body.parse(req.body);
-    const meta = resolvePlan(planCode);
-    console.log("PLAN CODE", 157, planCode, meta);
-    if (!meta) {
-      return res.status(400).json({ error: "invalid_plan" });
-    }
+      const plan = getPlanByCode(body.planCode as PlanCode);
+      if (!plan) {
+        return res.status(400).json({ error: "invalid_plan", message: "Plan not found" });
+      }
 
-    const parsed = SubscribeBody.safeParse(req.body);
-    console.log("PARSED", 163, parsed);
-    if (!parsed.success) {
-      return await badRequest(
-        req,
-        res,
-        "invalid_request",
-        "Validation error",
-        // If you use a helper, keep it; otherwise send parsed.error.issues
-        (z as any).treeifyError ? (z as any).treeifyError(parsed.error) : parsed.error.issues
+      const now = new Date();
+      const currentPeriodEnd = addMonths(now, body.prepayMonths);
+
+      const sub = await Subscription.findOneAndUpdate(
+        { tenantId: asObjectId(auth.tid) },
+        {
+          planCode: plan.code,
+          interval: body.interval,
+          seats: plan.seats,
+          status: "ACTIVE",
+          currentPeriodStart: now,
+          currentPeriodEnd,
+          graceUntil: null,
+          entitlements: plan.entitlements,
+          updatedAt: now,
+          lastPaymentAt: now,
+          failedPaymentCount: 0,
+          provider: "manual",
+        },
+        { new: true, upsert: true }
       );
+
+      res.status(201).json({ data: sub });
+    } catch (e: any) {
+      if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request", details: e.issues });
+      return res.status(400).json({ error: "invalid_request", details: e.message });
     }
-
-    const body = parsed.data;
-    const plan = getPlanByCode(body.planCode as PlanCode);
-    console.log("PLAN", 177, plan);
-    if (!plan) {
-      return await badRequest(req, res, "invalid_plan", "Plan not found!");
-    }
-
-    // const months = monthsForInterval(body.interval);
-    const now = new Date();
-    //const end = new Date(now.getTime());
-    //end.setMonth(end.getMonth() + months);
-
-    const currentPeriodStart = startNow ? now : now;
-    const currentPeriodEnd = addMonths(currentPeriodStart, prepayMonths);
-    console.log("SUB", 188);
-
-    const sub = await Subscription.findOneAndUpdate(
-      { tenantId: asObjectId(auth.tid) },
-      {
-        planCode: plan.code,
-        interval: body.interval,
-        seats: plan.seats,
-        status: "ACTIVE",
-        currentPeriodStart,
-        currentPeriodEnd,
-        graceUntil: null,
-        entitlements: plan.entitlements,
-        updatedAt: now,
-        lastPaymentAt: now,
-        failedPaymentCount: 0,
-        provider: "manual",
-      },
-      { new: true, upsert: true }
-    );
-
-    res.status(201).json({ data: sub });
   }
 );
 
@@ -281,10 +254,34 @@ subscriptionsRouter.get("/me", requireAuth, async (req, res) => {
   res.json({ data: sub });
 });
 
-// Plans
+// Plans — merge canonical PLANS with admin DB overrides
 subscriptionsRouter.get("/plans", cachePublic(300), async (_req, res) => {
-  const plans = await Plan.find({ active: true }).lean();
-  res.json({ data: plans });
+  const { PLANS, ADD_ONS } = await import("../billing/plans");
+  const { Plan } = await import("../models/Plan");
+
+  const overrides: any[] = await Plan.find({}).lean().catch(() => [] as any[]);
+  const overrideMap = new Map<string, any>(overrides.map((o: any) => [String(o.code), o]));
+
+  const merged = PLANS.map(canonical => {
+    const override = overrideMap.get(canonical.code);
+    if (!override) return canonical;
+    return {
+      ...canonical,
+      ...(override.name !== undefined && { name: override.name }),
+      ...(override.tagline !== undefined && { tagline: override.tagline }),
+      ...(override.seats !== undefined && { seats: override.seats }),
+      ...(override.priceCentsPerSeat !== undefined && { priceCentsPerSeat: override.priceCentsPerSeat }),
+      ...(override.priceCentsMonthly !== undefined && { priceCentsMonthly: override.priceCentsMonthly }),
+      ...(override.active !== undefined && { active: override.active }),
+      ...(override.isCustom !== undefined && { isCustom: override.isCustom }),
+      entitlements: { ...canonical.entitlements, ...(override.entitlements || {}) },
+    };
+  });
+
+  res.json({
+    data: merged.filter(p => p.active && !p.isLegacy),
+    addons: ADD_ONS,
+  });
 });
 
 // ─── Paystack Integration Endpoints ──────────────────────────────────
@@ -328,7 +325,7 @@ subscriptionsRouter.post(
   },
 );
 
-// POST /api/v1/subscriptions/verify — verify Paystack transaction after redirect
+// POST /api/v1/subscriptions/verify — verify Paystack transaction and activate subscription
 subscriptionsRouter.post(
   "/verify",
   requireAuth,
@@ -340,6 +337,7 @@ subscriptionsRouter.post(
       return res.status(503).json({ error: "payment_provider_unavailable" });
     }
 
+    const auth = (req as AuthRequest).auth;
     const { reference } = z.object({ reference: z.string().min(1) }).parse(req.body);
 
     try {
@@ -347,7 +345,42 @@ subscriptionsRouter.post(
       if (data.status !== "success") {
         return res.status(400).json({ error: "payment_not_successful", status: data.status });
       }
-      res.json({ data: { verified: true, reference: data.reference, amount: data.amount } });
+
+      // Extract plan info from transaction metadata
+      const meta = data.metadata || {};
+      const planCode = meta.planCode || meta.custom_fields?.find((f: any) => f.variable_name === "plan")?.value;
+      const interval = (meta.interval as string) || "MONTH";
+
+      if (planCode) {
+        const plan = getPlanByCode(planCode as PlanCode);
+        if (plan) {
+          const now = new Date();
+          const months = monthsForInterval(interval as Interval);
+          const currentPeriodEnd = addMonths(now, months);
+
+          await Subscription.findOneAndUpdate(
+            { tenantId: asObjectId(auth.tid) },
+            {
+              planCode: plan.code,
+              interval,
+              seats: plan.seats,
+              status: "ACTIVE",
+              currentPeriodStart: now,
+              currentPeriodEnd,
+              graceUntil: null,
+              entitlements: plan.entitlements,
+              updatedAt: now,
+              lastPaymentAt: now,
+              failedPaymentCount: 0,
+              provider: "paystack",
+              paystackCustomerCode: data.customer?.customer_code || undefined,
+            },
+            { new: true, upsert: true }
+          );
+        }
+      }
+
+      res.json({ data: { verified: true, reference: data.reference, amount: data.amount, planCode } });
     } catch (err: any) {
       res.status(400).json({ error: "verification_failed", message: err.message });
     }

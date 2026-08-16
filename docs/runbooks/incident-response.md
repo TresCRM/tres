@@ -45,8 +45,8 @@ mongosh --eval "db.adminCommand('ping')"
 ### 3.2 High Error Rate
 
 ```bash
-# 1. Check Prometheus metrics
-curl -s http://localhost:9090/api/v1/query?query=sum(rate(http_requests_total{status=~"5.."}[5m]))
+# 1. Check API metrics endpoint
+curl -s http://localhost:4000/metrics | grep "http_requests_total"
 
 # 2. Review Sentry for new exceptions
 #    https://sentry.io/organizations/<org>/issues/

@@ -18,10 +18,22 @@ extendZodWithOpenApi(z);
 export const webhooksRouter = Router();
 
 const VALID_EVENTS = [
-  "ticket.created", "ticket.updated", "ticket.assigned", "ticket.closed", "ticket.replied",
+  // Ticket lifecycle
+  "ticket.created", "ticket.assigned", "ticket.status_changed", "ticket.replied",
+  "ticket.closed", "ticket.reopened", "ticket.merged", "ticket.linked",
+  "ticket.sla_breach", "ticket.sla_warning", "ticket.ttl_reminder", "ticket.ttl_closed",
+  "ticket.transferred", "ticket.escalated",
+  // Customer lifecycle
+  "customer.created", "customer.updated", "customer.deleted",
+  // Team events
+  "user.invited", "user.accepted", "user.removed", "user.role_changed",
+  // Billing
+  "subscription.created", "subscription.renewed", "subscription.expired",
+  "subscription.canceled", "payment.succeeded", "payment.failed", "invoice.generated",
+  // Chat
+  "chat.started", "chat.ended", "chat.transferred",
+  // Survey
   "survey.submitted",
-  "subscription.expiring_soon", "subscription.expired",
-  "payment.succeeded", "payment.failed",
 ];
 
 const CreateBody = z.object({

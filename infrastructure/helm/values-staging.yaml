@@ -1,0 +1,92 @@
+# Staging environment overrides
+# Usage: helm install <release> ./api -f values-staging.yaml
+
+# --- API overrides ---
+api:
+  replicaCount: 1
+
+  image:
+    tag: "staging-latest"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: false
+
+  ingress:
+    hosts:
+      - host: api.staging.tres-crm.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: tres-crm-api-staging-tls
+        hosts:
+          - api.staging.tres-crm.com
+
+  env:
+    NODE_ENV: staging
+    PORT: "4000"
+    LOG_LEVEL: debug
+
+# --- Web overrides ---
+web:
+  replicaCount: 1
+
+  image:
+    tag: "staging-latest"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: false
+
+  ingress:
+    hosts:
+      - host: app.staging.tres-crm.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: tres-crm-web-staging-tls
+        hosts:
+          - app.staging.tres-crm.com
+
+  env:
+    NODE_ENV: staging
+    PORT: "3000"
+    NEXT_TELEMETRY_DISABLED: "1"
+
+# --- Workers overrides ---
+workers:
+  replicaCount: 1
+
+  image:
+    tag: "staging-latest"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: false
+
+  env:
+    NODE_ENV: staging
+    LOG_LEVEL: debug

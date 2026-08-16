@@ -50,15 +50,20 @@ export default function AdminTicketsPage() {
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2.5 border rounded-lg text-sm min-h-[44px]" aria-label="Filter by status">
           <option value="">All Status</option>
           <option value="OPEN">Open</option>
+          <option value="ASSIGNED">Assigned</option>
+          <option value="IN_PROGRESS">In Progress</option>
+          <option value="AWAITING_CUSTOMER">Awaiting Customer</option>
+          <option value="TRANSFERRED">Transferred</option>
+          <option value="RESOLVED">Resolved</option>
           <option value="CLOSED">Closed</option>
-          <option value="PENDING">Pending</option>
+          <option value="REOPENED">Reopened</option>
         </select>
         <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="px-3 py-2.5 border rounded-lg text-sm min-h-[44px]" aria-label="Filter by priority">
           <option value="">All Priority</option>
           <option value="LOW">Low</option>
           <option value="MEDIUM">Medium</option>
           <option value="HIGH">High</option>
-          <option value="URGENT">Urgent</option>
+          <option value="CRITICAL">Critical</option>
         </select>
       </div>
 

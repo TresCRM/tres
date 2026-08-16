@@ -15,8 +15,14 @@ import useNetwork from '@/hooks/useNetwork';
 import { useSearchParams, useRouter } from 'next/navigation';
 
 /* ---------------------------------------------
-   Schemas (split by steps, then merged)
+   Step validation schemas — lightweight, only block
+   navigation on truly required fields.
+   Full server-aligned validation runs at submit time.
+   Server: password min 10, uppercase+lowercase+digit
+   Server: plan enum INDIVIDUAL | COMPANY
 --------------------------------------------- */
+const VALID_PLANS = ['INDIVIDUAL', 'COMPANY'] as const;
+
 const step1Schema = z.object({
   firstName: z.string().min(2, 'First name required'),
   lastName: z.string().min(2, 'Last name required'),
@@ -27,40 +33,61 @@ const step2Schema = z.object({
   companyName: z.string().min(2, 'Company name required'),
   tenantSlug: z.string().min(3, 'At least 3 chars')
     .regex(/^[a-z0-9-]+$/, 'lowercase letters, numbers and hyphens only'),
-  plan: z.enum(['SOLO','TEAM','COMPANY']).default('SOLO'),
-  brandingPrimary: z.string().regex(/^#([0-9a-f]{3}){1,2}$/i, 'Hex color like #1a73e8'),
-  brandingSurface: z.string().regex(/^#([0-9a-f]{3}){1,2}$/i, 'Hex color'),
-  logoUrl: z.url().optional().or(z.literal('')),
-  emailFrom: z.email('Valid sender email').optional().or(z.literal('')),
 });
 
 const step3Schema = z.object({
-  password: z.string().min(8, 'Min 8 characters'),
-  confirmPassword: z.string().min(8),
+  password: z.string()
+    .min(10, 'Password must be at least 10 characters')
+    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Must contain at least one digit'),
+  confirmPassword: z.string().min(1, 'Please confirm your password'),
 }).refine(v => v.password === v.confirmPassword, {
   path: ['confirmPassword'], message: 'Passwords do not match'
 });
 
-// Full payload schema to submit to /signup
-const signupPayloadSchema = z.object({
-  tenant: z.object({
-    slug: z.string(),
-    plan: z.enum(['SOLO','TEAM','COMPANY']),
-    name: z.string(),
-  }),
-  owner: z.object({
-    firstName: z.string(),
-    lastName: z.string(),
-    email: z.email(),
-    password: z.string(),
-  }),
-  branding: z.object({
-    primaryColor: z.string().regex(/^#([0-9a-f]{3}){1,2}$/i),
-    surfaceColor: z.string().regex(/^#([0-9a-f]{3}){1,2}$/i),
-    logoUrl: z.url().optional(),
-    emailFrom: z.email().optional(),
-  }).partial(),
-});
+/* ---------------------------------------------
+   Server error parser — turns API error responses
+   into human-readable messages
+--------------------------------------------- */
+const ERROR_MESSAGES: Record<string, string> = {
+  tenant_slug_taken: 'This workspace URL is already taken. Please choose a different one.',
+  invalid_request: 'Some fields are invalid. Please check and try again.',
+  email_already_exists: 'An account with this email already exists.',
+  tenant_not_found: 'Workspace not found. Please check the slug.',
+  token_invalid: 'Verification token is invalid or has expired.',
+  token_expired: 'Verification token has expired. Please request a new one.',
+};
+
+function parseServerError(e: any): string {
+  const data = e?.response?.data;
+  if (!data) return e?.message || 'Something went wrong. Please try again.';
+
+  const code = data.error;
+  const details = data.details;
+
+  // If server returned a Zod validation error in details, parse it
+  if (details && typeof details === 'string') {
+    try {
+      const parsed = JSON.parse(details);
+      if (Array.isArray(parsed)) {
+        // Zod error array: [{ path: ['owner','password'], message: '...' }, ...]
+        return parsed
+          .map((issue: any) => {
+            const field = issue.path?.slice(-1)[0];
+            const label = field ? `${field}: ` : '';
+            return `${label}${issue.message}`;
+          })
+          .join('\n');
+      }
+    } catch {
+      // details is a plain string message, use it directly
+      return details;
+    }
+  }
+
+  return ERROR_MESSAGES[code] || code?.replace(/_/g, ' ') || 'Something went wrong. Please try again.';
+}
 
 /* ---------------------------------------------
    Color Picker with hex paste support
@@ -144,7 +171,7 @@ function ColorPickerField({ id, label, value, onChange, hint }: {
 --------------------------------------------- */
 type Step = 1|2|3|4;
 
-function StepIndicator({ steps, currentStep }: { steps: { n: number; label: string }[]; currentStep: number }) {
+function StepIndicator({ steps, currentStep, onGoTo }: { steps: { n: number; label: string }[]; currentStep: number; onGoTo?: (n: number) => void }) {
   function cls(sn: number) {
     if (currentStep > sn) return 'bg-[#1a73e8] text-white';
     if (currentStep === sn) return 'bg-[#1a73e8] text-white shadow-md ring-4 ring-[#1a73e8]/20';
@@ -152,17 +179,61 @@ function StepIndicator({ steps, currentStep }: { steps: { n: number; label: stri
   }
   return (
     <div className="flex items-center justify-center gap-2 text-sm" role="navigation" aria-label="Signup progress">
-      {steps.map((s, i) => (
-        <div key={s.n} className="flex items-center gap-2">
-          <div className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold transition-all ${cls(s.n)}`}>
-            {currentStep > s.n ? '\u2713' : s.n}
+      {steps.map((s, i) => {
+        const canClick = onGoTo && s.n < currentStep;
+        return (
+          <div key={s.n} className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => canClick && onGoTo(s.n)}
+              disabled={!canClick}
+              className={`h-8 w-8 rounded-full grid place-items-center text-xs font-bold transition-all ${cls(s.n)} ${canClick ? 'cursor-pointer hover:ring-2 hover:ring-[#1a73e8]/40' : 'cursor-default'}`}
+              aria-label={`Step ${s.n}: ${s.label}${canClick ? ' (click to go back)' : ''}`}
+            >
+              {currentStep > s.n ? '\u2713' : s.n}
+            </button>
+            <span className={`hidden sm:block text-xs ${currentStep >= s.n ? 'font-semibold text-gray-700' : 'text-gray-400'} ${canClick ? 'cursor-pointer' : ''}`} onClick={() => canClick && onGoTo(s.n)}>{s.label}</span>
+            {i !== steps.length - 1 && <div className={`w-8 sm:w-12 h-0.5 rounded transition-colors ${currentStep > s.n ? 'bg-[#1a73e8]' : 'bg-[#e8f0fe]'}`} />}
           </div>
-          <span className={`hidden sm:block text-xs ${currentStep >= s.n ? 'font-semibold text-gray-700' : 'text-gray-400'}`}>{s.label}</span>
-          {i !== steps.length - 1 && <div className={`w-8 sm:w-12 h-0.5 rounded transition-colors ${currentStep > s.n ? 'bg-[#1a73e8]' : 'bg-[#e8f0fe]'}`} />}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+const STORAGE_KEY = 'tres_signup_draft';
+
+// Fields excluded from localStorage (sensitive or large)
+const EXCLUDED_FIELDS = new Set(['password', 'confirmPassword', 'v_token', 'v_code']);
+
+function loadDraft(): { step?: number; values?: Record<string, string> } {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return {};
+    const draft = JSON.parse(raw);
+    // Migrate stale plan values from older versions
+    if (draft.values?.plan && !['INDIVIDUAL', 'COMPANY'].includes(draft.values.plan)) {
+      draft.values.plan = 'INDIVIDUAL';
+    }
+    return draft;
+  } catch { return {}; }
+}
+
+function saveDraft(step: number, values: Record<string, string>) {
+  try {
+    const safe: Record<string, string> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (EXCLUDED_FIELDS.has(k)) continue;
+      // Skip data-URL logos (too large for localStorage)
+      if (k === 'logoUrl' && v.startsWith('data:')) continue;
+      safe[k] = v;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ step, values: safe }));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
 }
 
 function SignupWizardInner() {
@@ -174,34 +245,51 @@ function SignupWizardInner() {
   const urlEmail = sp.get('email') || '';
   const urlTenant = sp.get('tenant') || '';
   const urlToken = sp.get('token') || '';
-  // (prevState: Step) => Step | (s: Step) => number
-  const [step, setStep] = useState<Step>(1);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
 
-  // Persisted values across steps
-  const [values, setValues] = useState({
-    // step 1
+  // Restore draft from localStorage (runs once on mount)
+  const draft = useMemo(() => loadDraft(), []);
+
+  const defaults = {
     firstName: '',
     lastName: '',
     email: '',
-    // step 2
     companyName: '',
     tenantSlug: '',
-    plan: 'SOLO',
+    plan: 'INDIVIDUAL',
     brandingPrimary: '#1a73e8',
     brandingSurface: '#f1f3f4',
     logoUrl: '',
     emailFrom: '',
-    // step 3
     password: '',
     confirmPassword: '',
-    // step 4 (verify)
     v_email: urlEmail,
     v_tenantSlug: urlTenant,
     v_token: urlToken,
+    v_code: '',
+  };
+
+  const [step, setStep] = useState<Step>(() => {
+    const saved = draft.step;
+    // Don't restore past step 3 (step 4 = verify, requires fresh server state)
+    if (saved && saved >= 1 && saved <= 3) return saved as Step;
+    return 1;
   });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const [values, setValues] = useState(() => ({
+    ...defaults,
+    // Overlay saved draft values (URL params take precedence for verify fields)
+    ...draft.values,
+    v_email: urlEmail || draft.values?.v_email || '',
+    v_tenantSlug: urlTenant || draft.values?.v_tenantSlug || '',
+    v_token: urlToken,
+    v_code: '',
+  }));
+
+  // Persist to localStorage whenever values or step change
+  useEffect(() => { saveDraft(step, values); }, [step, values]);
 
   // Simple step headers
   const steps = [
@@ -230,32 +318,39 @@ function SignupWizardInner() {
     return undefined;
   }, [step]);
 
-  // Submit (calls /signup) on step 3
-  async function submitSignup() {
+  // Submit (calls /signup) on step 3 — receives merged values directly
+  async function submitSignupWith(vals: typeof values) {
     setBusy(true);
     try {
-      const payload = signupPayloadSchema.parse({
+      // Normalise plan — guard against stale drafts with old values like "SOLO"
+      const plan = VALID_PLANS.includes(vals.plan as any) ? vals.plan : 'INDIVIDUAL';
+
+      // Build payload — only include optional fields if non-empty
+      const logoUrl = vals.logoUrl && !vals.logoUrl.startsWith('data:') ? vals.logoUrl : undefined;
+      const emailFrom = vals.emailFrom || undefined;
+
+      const payload = {
         tenant: {
-          slug: values.tenantSlug.toLowerCase(),
-          plan: values.plan as any,
-          name: values.companyName,
+          slug: vals.tenantSlug.toLowerCase(),
+          plan,
+          name: vals.companyName,
         },
         owner: {
-          firstName: values.firstName,
-          lastName: values.lastName,
-          email: values.email.toLowerCase(),
-          password: values.password,
+          firstName: vals.firstName,
+          lastName: vals.lastName,
+          email: vals.email.toLowerCase(),
+          password: vals.password,
         },
         branding: {
-          primaryColor: values.brandingPrimary,
-          surfaceColor: values.brandingSurface,
-          logoUrl: values.logoUrl || undefined,
-          emailFrom: values.emailFrom || undefined,
-        }
-      });
+          primaryColor: vals.brandingPrimary || '#1a73e8',
+          surfaceColor: vals.brandingSurface || '#f1f3f4',
+          ...(logoUrl ? { logoUrl } : {}),
+          ...(emailFrom ? { emailFrom } : {}),
+        },
+      };
 
-      const { data } = await api.post('/api/v1/auth/signup', payload);
-      // Autofill verify step with returned tenant slug + email
+      const { data } = await api.post('/auth/signup', payload);
+      clearDraft();
       setValues(v => ({
         ...v,
         v_email: data?.owner?.email || v.email,
@@ -263,26 +358,45 @@ function SignupWizardInner() {
       }));
       setStep(4);
     } catch (e:any) {
-      setErr(e?.response?.data?.error || 'Signup failed');
+      setErr(parseServerError(e));
       setModalOpen(true);
     } finally {
       setBusy(false);
     }
   }
 
-  // Verify email
+  // Verify email — prefers 6-digit code, falls back to magic-link token
   async function verifyNow() {
+    const code = (values.v_code || '').replace(/\D/g, '');
+    const token = values.v_token || '';
+    if (!code && !token) {
+      setErr('Please enter the 6-digit code from your email.');
+      setModalOpen(true);
+      return;
+    }
     setBusy(true);
     try {
-      await api.post('/api/v1/auth/verify', {
+      const payload: any = {
         email: values.v_email,
         tenantSlug: values.v_tenantSlug,
-        token: values.v_token
-      });
+      };
+      if (code.length === 6) payload.code = code;
+      else if (token) payload.token = token;
+
+      await api.post('/auth/verify', payload);
+      clearDraft();
       // After verification, send them to signin with prefilled tenant
       router.replace(`/signin?tenant=${encodeURIComponent(values.v_tenantSlug)}&email=${encodeURIComponent(values.v_email)}`);
     } catch (e:any) {
-      setErr(e?.response?.data?.error || 'Verification failed');
+      const data = e?.response?.data || {};
+      if (data.error === 'too_many_attempts') {
+        const secs = data.retryAfterSeconds || 900;
+        setErr(`Too many failed attempts. Please wait ${Math.ceil(secs / 60)} minute(s) or request a new code.`);
+      } else if (data.remainingAttempts !== undefined) {
+        setErr(`${data.message || 'Invalid code.'} ${data.remainingAttempts} attempt(s) remaining.`);
+      } else {
+        setErr(parseServerError(e));
+      }
       setModalOpen(true);
     } finally {
       setBusy(false);
@@ -293,14 +407,14 @@ function SignupWizardInner() {
   async function resendEmail() {
     setBusy(true);
     try {
-      await api.post('/api/v1/auth/resend', {
+      await api.post('/auth/resend', {
         tenantSlug: values.v_tenantSlug,
         email: values.v_email
       });
       setErr('Verification email re-sent. Check your inbox.');
       setModalOpen(true);
     } catch (e:any) {
-      setErr(e?.response?.data?.error || 'Could not resend email');
+      setErr(parseServerError(e));
       setModalOpen(true);
     } finally {
       setBusy(false);
@@ -319,13 +433,13 @@ function SignupWizardInner() {
 
       {/* Header */}
       <div className="text-center">
-        <Image src="/icon-192.png" alt="TRES CRM" width={56} height={56} className="mx-auto mb-4 rounded-2xl" priority />
+        <Image src="/logo-md.png" alt="TRES CRM" width={72} height={24} className="mx-auto mb-4" priority />
         <h1 className="text-2xl font-bold">Create your workspace</h1>
         <p className="text-gray-500 text-sm mt-1">Set up your TRES CRM account in minutes</p>
       </div>
 
       {/* Stepper */}
-      <StepIndicator steps={steps} currentStep={step} />
+      <StepIndicator steps={steps} currentStep={step} onGoTo={n => setStep(clampStep(n))} />
 
       {/* Card */}
       <div className="rounded-2xl border bg-white shadow-sm p-6">
@@ -335,8 +449,15 @@ function SignupWizardInner() {
             initialValues={values}
             validate={currentValidate}
             onSubmit={async (vals) => {
-              setValues(vals);
-              if (step < 3) next(); else await submitSignup();
+              // Sync Formik snapshot → outer state before acting
+              const merged = { ...values, ...vals };
+              setValues(merged);
+              if (step < 3) {
+                next();
+              } else {
+                // Pass merged values directly so submitSignup sees them immediately
+                await submitSignupWith(merged);
+              }
             }}
           >
             {({ values: v, setFieldValue, isSubmitting }) => (
@@ -358,12 +479,11 @@ function SignupWizardInner() {
                         <label className="text-sm text-gray-700">Plan</label>
                         <select
                           name="plan"
-                          value={v.plan}
+                          value={VALID_PLANS.includes(v.plan as any) ? v.plan : 'INDIVIDUAL'}
                           onChange={e=>setFieldValue('plan', e.target.value)}
                           className="h-10 px-3 rounded-md border w-full"
                         >
-                          <option value="SOLO">Solo</option>
-                          <option value="TEAM">Team</option>
+                          <option value="INDIVIDUAL">Individual</option>
                           <option value="COMPANY">Company</option>
                         </select>
                       </div>
@@ -412,13 +532,14 @@ function SignupWizardInner() {
 
                 {step === 3 && (
                   <>
-                    <Input name="password" type="password" label="Password" placeholder="••••••••" />
-                    <Input name="confirmPassword" type="password" label="Confirm password" placeholder="••••••••" />
+                    <Input name="password" type="password" label="Password" placeholder="••••••••••" />
+                    <p className="text-xs text-gray-400 -mt-2">Min 10 characters, with at least one uppercase, one lowercase, and one digit.</p>
+                    <Input name="confirmPassword" type="password" label="Confirm password" placeholder="••••••••••" />
                   </>
                 )}
 
                 <div className="flex items-center justify-between pt-2">
-                  <Button variant="outline" type="button" onClick={back} disabled={step===1 || isSubmitting || !online}>
+                  <Button variant="outline" type="button" onClick={() => { setValues(prev => ({ ...prev, ...v })); back(); }} disabled={step===1 || isSubmitting || !online}>
                     Back
                   </Button>
                   <div className="flex items-center gap-2">
@@ -437,48 +558,72 @@ function SignupWizardInner() {
               <div className="w-12 h-12 bg-[#e8f0fe] rounded-full flex items-center justify-center mx-auto mb-3">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary,#4F46E5)" strokeWidth="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
               </div>
-              <p className="text-sm text-gray-700">
-                We sent a verification email to <strong>{values.v_email || values.email}</strong>.
+              <h2 className="text-lg font-semibold text-gray-900">Check your email</h2>
+              <p className="text-sm text-gray-700 mt-1">
+                We sent a 6-digit code to <strong>{values.v_email || values.email}</strong>.
               </p>
-              <p className="text-xs text-gray-500 mt-1">Click the link in the email, or paste the code below.</p>
+              <p className="text-xs text-gray-500 mt-1">Enter the code below, or click the link in the email.</p>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-sm text-gray-700">Workspace (tenant slug)</label>
-                <input
-                  className="h-10 px-3 rounded-xl border w-full"
-                  value={values.v_tenantSlug}
-                  onChange={e=>setValues(v=>({...v, v_tenantSlug: e.target.value}))}
-                />
+            {/* 6-box OTP input */}
+            <div className="space-y-2">
+              <label className="text-sm text-gray-700 block text-center">Verification code</label>
+              <div className="flex justify-center gap-2" onPaste={(e) => {
+                const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+                if (pasted.length >= 4) {
+                  e.preventDefault();
+                  setValues(v => ({ ...v, v_code: pasted.padEnd(6, '') }));
+                  // Auto-submit if pasted code is complete
+                  if (pasted.length === 6) setTimeout(() => verifyNow(), 50);
+                }
+              }}>
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <input
+                    key={i}
+                    id={`otp-${i}`}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    autoComplete={i === 0 ? "one-time-code" : "off"}
+                    className="w-12 h-14 text-center text-xl font-mono font-semibold rounded-lg border-2 border-gray-300 focus:border-[var(--brand-primary,#4F46E5)] focus:outline-none"
+                    value={values.v_code[i] || ''}
+                    onChange={(e) => {
+                      const digit = e.target.value.replace(/\D/g, '').slice(-1);
+                      const next = (values.v_code || '').padEnd(6, ' ').split('');
+                      next[i] = digit;
+                      const updated = next.join('').trimEnd();
+                      setValues(v => ({ ...v, v_code: updated }));
+                      // Auto-advance
+                      if (digit && i < 5) {
+                        const nextInput = document.getElementById(`otp-${i + 1}`);
+                        (nextInput as HTMLInputElement)?.focus();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      // Backspace on empty box goes to previous
+                      if (e.key === 'Backspace' && !values.v_code[i] && i > 0) {
+                        const prevInput = document.getElementById(`otp-${i - 1}`);
+                        (prevInput as HTMLInputElement)?.focus();
+                      }
+                    }}
+                    aria-label={`Digit ${i + 1}`}
+                  />
+                ))}
               </div>
-              <div className="space-y-1">
-                <label className="text-sm text-gray-700">Email</label>
-                <input
-                  className="h-10 px-3 rounded-xl border w-full"
-                  type="email"
-                  value={values.v_email}
-                  onChange={e=>setValues(v=>({...v, v_email: e.target.value}))}
-                />
-              </div>
+              <p className="text-xs text-gray-400 text-center">Paste the code to auto-fill all boxes</p>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm text-gray-700">Verification token</label>
-              <input
-                className="h-10 px-3 rounded-xl border w-full"
-                value={values.v_token}
-                onChange={e=>setValues(v=>({...v, v_token: e.target.value}))}
-                placeholder="Paste token from email"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center justify-between pt-2 gap-2">
               <Button variant="outline" onClick={()=>setStep(3)} disabled={busy || !online}>Back</Button>
               <div className="flex items-center gap-2">
                 {busy && <Spinner />}
-                <Button variant="outline" onClick={resendEmail} disabled={busy || !online}>Resend email</Button>
-                <Button onClick={verifyNow} disabled={busy || !online}>I’ve verified</Button>
+                <Button variant="outline" onClick={resendEmail} disabled={busy || !online}>Resend</Button>
+                <Button
+                  onClick={verifyNow}
+                  disabled={busy || !online || (values.v_code || '').replace(/\D/g, '').length !== 6}
+                >
+                  Verify
+                </Button>
               </div>
             </div>
           </div>
@@ -489,7 +634,11 @@ function SignupWizardInner() {
       <Modal open={modalOpen} onClose={()=>setModalOpen(false)} title="Notice" footer={
         <Button variant="outline" onClick={()=>setModalOpen(false)}>Close</Button>
       }>
-        <p className="text-sm">{err}</p>
+        <div className="text-sm space-y-1">
+          {err?.split('\n').map((line, i) => (
+            <p key={i} className={err?.includes(':') && i > 0 ? 'text-gray-600' : ''}>{line}</p>
+          ))}
+        </div>
       </Modal>
     </section>
   );

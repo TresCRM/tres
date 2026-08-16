@@ -198,7 +198,8 @@ export function getPaymentProvider(): PaymentProvider | null {
   if (cached !== undefined) return cached;
 
   const secretKey = process.env.PAYSTACK_SECRET_KEY;
-  if (!secretKey) {
+  // Paystack secret keys must start with sk_test_ or sk_live_
+  if (!secretKey || !secretKey.startsWith("sk_")) {
     cached = null;
     return null;
   }

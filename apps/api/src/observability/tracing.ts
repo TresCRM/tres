@@ -26,12 +26,9 @@ export function initTracing(): void {
       require("@opentelemetry/auto-instrumentations-node").getNodeAutoInstrumentations;
     OTLPTraceExporter =
       require("@opentelemetry/exporter-trace-otlp-http").OTLPTraceExporter;
-    Resource = require("@opentelemetry/resources").Resource;
-    SemanticResourceAttributes =
-      require("@opentelemetry/semantic-conventions").SemanticResourceAttributes ??
-      require("@opentelemetry/semantic-conventions").SEMRESATTRS_SERVICE_NAME
-        ? undefined
-        : undefined;
+    // v2+: resourceFromAttributes(); v1: Resource class
+    const resources = require("@opentelemetry/resources");
+    Resource = resources.resourceFromAttributes || resources.Resource;
   } catch {
     console.warn(
       "[tracing] OpenTelemetry packages not installed -- tracing disabled. " +
@@ -45,11 +42,15 @@ export function initTracing(): void {
     const endpoint =
       process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318";
 
-    const resource = new Resource({
+    const attrs = {
       "service.name": "tres-crm-api",
       "service.version": "1.0.0",
       "deployment.environment": process.env.NODE_ENV || "development",
-    });
+    };
+    // v2+: resourceFromAttributes(attrs); v1: new Resource(attrs)
+    const resource = typeof Resource === "function" && !Resource.prototype
+      ? Resource(attrs)
+      : new Resource(attrs);
 
     const traceExporter = new OTLPTraceExporter({ url: `${endpoint}/v1/traces` });
 

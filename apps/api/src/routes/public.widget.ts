@@ -8,6 +8,7 @@ import { Router } from "express";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import { WidgetToken } from "../models/WidgetToken";
+import { WidgetImpression } from "../models/WidgetImpression";
 import { Tenant } from "../models/Tenant";
 import { Ticket } from "../models/Ticket";
 import { Comment } from "../models/Comment";
@@ -81,7 +82,35 @@ registry.registerPath({ tags: ["Widget (Public)"], method: "post", path: "/publi
 registry.registerPath({ tags: ["Widget (Public)"], method: "get", path: "/public/widget/tickets/{id}", description: "Get ticket status and comments via tracking token.", request: { params: z.object({ id: z.string() }), query: z.object({ trackingToken: z.string() }) }, responses: { 200: { description: "OK" } }, security: [] });
 registry.registerPath({ tags: ["Widget (Public)"], method: "post", path: "/public/widget/tickets/{id}/reply", description: "Reply to a ticket from the widget.", request: { params: z.object({ id: z.string() }), body: { content: { "application/json": { schema: ReplyBody } } } }, responses: { 201: { description: "Reply added" } }, security: [] });
 
+const TrackBody = z.object({
+  token: z.string().min(1),
+  event: z.enum(["impression", "badge_click", "signup_conversion"]),
+  referrerDomain: z.string().max(500).optional(),
+});
+
 /* ---------- Routes ---------- */
+
+// POST widget tracking event
+publicWidgetRouter.post("/widget/track", async (req, res) => {
+  try {
+    const body = TrackBody.parse(req.body);
+    const origin = req.headers.origin || req.headers.referer;
+    const wt = await resolveWidgetToken(body.token, origin as string);
+    if (!wt) return res.status(401).json({ error: "invalid_widget_token" });
+
+    await WidgetImpression.create({
+      tenantId: wt.tenantId,
+      event: body.event,
+      referrerDomain: body.referrerDomain,
+      timestamp: new Date(),
+    });
+
+    return res.status(201).json({ data: { recorded: true } });
+  } catch (e: any) {
+    if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request", details: e.message });
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
 
 // GET widget config (branding + settings)
 publicWidgetRouter.get("/widget/config", async (req, res) => {
@@ -125,7 +154,7 @@ publicWidgetRouter.post("/widget/tickets", async (req, res) => {
       body: sanitizeUserHtml(body.body),
       customerEmail: body.email.toLowerCase(),
       priority: "MEDIUM",
-      status: "ACTIVE",
+      status: "OPEN",
       createdBy: wt.tenantId, // widget has no user
     });
 
@@ -134,16 +163,29 @@ publicWidgetRouter.post("/widget/tickets", async (req, res) => {
 
     const trackingToken = signTrackingToken(body.email.toLowerCase(), String(wt.tenantId), String(ticket._id));
 
-    // Send confirmation email
+    // Send confirmation email — best-effort: SMTP failure must not fail the create request.
     if (!ENV.EMAILS_DISABLED) {
-      const tenant = await Tenant.findById(wt.tenantId).select("branding").lean();
-      const trackUrl = `${ENV.FRONTEND_ORIGIN}/track-ticket?token=${encodeURIComponent(trackingToken)}`;
-      await sendEmail({
-        to: body.email,
-        subject: `Ticket #${ticket._id} received -- ${body.subject}`,
-        html: `<p>Hi${body.name ? ` ${body.name}` : ""},</p><p>We received your request: <strong>${body.subject}</strong></p><p><a href="${trackUrl}">Track your ticket</a></p><p>${tenant?.branding?.name || "Support"} Team</p>`,
-        text: `We received: ${body.subject}. Track: ${trackUrl}`,
-      });
+      const tenant = await Tenant.findById(wt.tenantId).select("branding slug").lean();
+      const slugPart = tenant?.slug ? `&tenant=${encodeURIComponent(tenant.slug)}` : "";
+      const trackUrl = `${ENV.FRONTEND_ORIGIN}/portal/tickets/${ticket._id}?token=${encodeURIComponent(trackingToken)}${slugPart}`;
+      try {
+        await sendEmail({
+          to: body.email,
+          subject: `Ticket #${ticket._id} received -- ${body.subject}`,
+          messageKey: "ticket_created_customer",
+          html: `<p>Hi${body.name ? ` ${body.name}` : ""},</p><p>We received your request: <strong>${body.subject}</strong></p><p><a href="${trackUrl}">Track your ticket</a></p><p>${tenant?.branding?.name || "Support"} Team</p>`,
+          text: `We received: ${body.subject}. Track: ${trackUrl}`,
+        });
+      } catch (mailErr: any) {
+        console.error("[mail] widget ticket.created customer email failed", {
+          provider: process.env.SMTP_PROVIDER || "default",
+          to: body.email,
+          ticketId: String(ticket._id),
+          code: mailErr?.code,
+          response: mailErr?.response,
+          message: mailErr?.message,
+        });
+      }
     }
 
     emitTicketEvent(String(wt.tenantId), { event: "ticket.created", ticketId: String(ticket._id), source: "widget" });
@@ -217,7 +259,10 @@ publicWidgetRouter.post("/widget/tickets/:id/reply", async (req, res) => {
       isAgent: false,
     });
 
-    emitTicketEvent(String(ticket.tenantId), { event: "ticket.replied", ticketId: String(ticket._id), isAgent: false, source: "widget" });
+    // Bump ticket so dashboard sort-by-recency surfaces the new activity
+    await Ticket.updateOne({ _id: ticket._id }, { $currentDate: { updatedAt: true } });
+
+    emitTicketEvent(String(ticket.tenantId), { event: "ticket.replied", ticketId: String(ticket._id), isAgent: false, source: "widget", customerEmail: ticket.customerEmail });
 
     return res.status(201).json({ data: { commentId: String(comment._id) } });
   } catch (e: any) {

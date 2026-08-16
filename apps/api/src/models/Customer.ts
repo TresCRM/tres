@@ -7,6 +7,8 @@ export interface CustomerDoc {
   email: string;
   phone?: string;
   company?: string;
+  customFields?: Map<string, any>;
+  isSandbox?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,7 +18,9 @@ const CustomerSchema = new Schema<CustomerDoc>({
   name: { type: String, required: true },
   email: { type: String, index: true, required: true },
   phone: String,
-  company: String
+  company: String,
+  customFields: { type: Map, of: Schema.Types.Mixed, default: undefined },
+  isSandbox: { type: Boolean, default: false, index: true },
 }, { timestamps: true });
 
 CustomerSchema.index({ tenantId: 1, email: 1 }, { unique: true });

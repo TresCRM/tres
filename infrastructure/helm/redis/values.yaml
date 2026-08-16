@@ -1,0 +1,32 @@
+# Redis Helm chart values for TRES CRM
+# Used for: rate limiting, session cache, idempotency keys, AI response caching
+# Usage: helm install redis bitnami/redis -f values.yaml
+
+architecture: standalone  # use 'replication' for production HA
+
+auth:
+  enabled: true
+  password: ""  # set via --set auth.password=xxx or secret
+
+master:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  persistence:
+    enabled: true
+    size: 2Gi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+# Eviction policy for cache usage
+commonConfiguration: |-
+  maxmemory 200mb
+  maxmemory-policy allkeys-lru

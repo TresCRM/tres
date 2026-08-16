@@ -74,6 +74,9 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
         scopes: matched.scopes,
       } satisfies ApiKeyPayload;
 
+      // Set environment header for callers
+      res.setHeader("X-TRES-Environment", matched.environment || "production");
+
       // Update lastUsedAt (fire-and-forget)
       ApiKey.updateOne({ _id: matched._id }, { lastUsedAt: new Date() }).catch(() => {});
 

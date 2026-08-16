@@ -2,13 +2,16 @@
 
 import { use, useState } from 'react';
 import { useTicket, useReplyTicket, useCloseTicket, useReopenTicket } from '@/hooks/useApi';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { timeAgo } from '@/lib/timeAgo';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { bodyRules, normalizeFormData } from '@/lib/validation';
-import { Loader2 } from 'lucide-react';
+import { Loader2, FileText, Image as ImageIcon, Send } from 'lucide-react';
+import RichTextField, { isRichTextEmpty } from '@/components/editor/RichTextField';
+import AttachmentUploader, { type UploadedAttachment } from '@/components/attachments/AttachmentUploader';
+import { ticketsApi } from '@/lib/apiClient';
 
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -17,13 +20,32 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   const closeMutation = useCloseTicket();
   const reopenMutation = useReopenTicket();
   const toast = useToast();
+  const qc = useQueryClient();
   const [confirmClose, setConfirmClose] = useState(false);
+  const [replyAttachments, setReplyAttachments] = useState<UploadedAttachment[]>([]);
+  const [resending, setResending] = useState(false);
 
-  const { register, handleSubmit, reset, formState: { errors: replyErrors } } = useForm<{ body: string }>();
+  const handleResendInvite = async () => {
+    setResending(true);
+    try {
+      const r = await ticketsApi.resendInvite(id);
+      toast.success(`Invite resent to ${r.data?.sentTo || 'customer'}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to resend invite');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const { handleSubmit, reset, control, formState: { errors: replyErrors } } = useForm<{ body: string }>({
+    defaultValues: { body: '' },
+  });
 
   const onReply = async (data: { body: string }) => {
-    await replyMutation.mutateAsync({ id, body: data.body.trim() });
-    reset();
+    await replyMutation.mutateAsync({ id, body: data.body });
+    reset({ body: '' });
+    setReplyAttachments([]);
+    qc.invalidateQueries({ queryKey: ['tickets', id] });
     toast.success('Reply sent');
   };
 
@@ -44,10 +66,16 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         </div>
         <div className="flex gap-2 flex-wrap">
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-            ticket.status === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+            ticket.status === 'OPEN' ? 'bg-green-100 text-green-700' :
+            ticket.status === 'ASSIGNED' ? 'bg-blue-100 text-blue-700' :
+            ticket.status === 'IN_PROGRESS' ? 'bg-indigo-100 text-indigo-700' :
+            ticket.status === 'AWAITING_CUSTOMER' ? 'bg-amber-100 text-amber-700' :
+            ticket.status === 'TRANSFERRED' ? 'bg-purple-100 text-purple-700' :
+            ticket.status === 'RESOLVED' ? 'bg-teal-100 text-teal-700' :
             ticket.status === 'CLOSED' ? 'bg-gray-100 text-gray-600' :
-            'bg-yellow-100 text-yellow-700'
-          }`}>{ticket.status}</span>
+            ticket.status === 'REOPENED' ? 'bg-yellow-100 text-yellow-700' :
+            'bg-gray-100 text-gray-600'
+          }`}>{ticket.status.replace(/_/g, ' ')}</span>
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
             ticket.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
             ticket.priority === 'MEDIUM' ? 'bg-orange-100 text-orange-600' :
@@ -63,7 +91,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           {/* Original message */}
           <div className="border rounded-lg p-4 bg-white mb-4">
             <div className="text-sm text-gray-500 mb-2">Original message</div>
-            <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: ticket.body }} />
+            <div className="prose prose-sm max-w-none text-sm" dangerouslySetInnerHTML={{ __html: ticket.body }} />
+            {ticket.attachments && ticket.attachments.length > 0 && (
+              <AttachmentList attachments={ticket.attachments} />
+            )}
           </div>
 
           {/* Comments */}
@@ -75,23 +106,40 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                 </span>
                 <span className="text-xs text-gray-400">{timeAgo(c.createdAt)}</span>
               </div>
-              <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: c.body }} />
+              <div className="prose prose-sm max-w-none text-sm" dangerouslySetInnerHTML={{ __html: c.body }} />
             </div>
           ))}
 
           {/* Reply form */}
-          {ticket.status !== 'CLOSED' && (
-            <form onSubmit={handleSubmit(onReply)} className="border rounded-lg p-4 bg-white mt-4">
-              <label htmlFor="reply-body" className="block text-sm font-medium mb-2">Reply</label>
-              <textarea
-                id="reply-body"
-                rows={3}
-                {...register('body', bodyRules)}
-                className="w-full border rounded-md px-3 py-2 text-sm mb-3"
-                placeholder="Type your reply..."
-                aria-invalid={!!replyErrors.body}
+          {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && (
+            <form onSubmit={handleSubmit(onReply)} className="border rounded-lg p-4 bg-white mt-4 space-y-3">
+              <label htmlFor="reply-body" className="block text-sm font-medium">Reply</label>
+              <Controller
+                control={control}
+                name="body"
+                rules={{ validate: v => !isRichTextEmpty(v) || 'Reply cannot be empty' }}
+                render={({ field }) => (
+                  <RichTextField
+                    id="reply-body"
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    placeholder="Type your reply…"
+                    minHeight={120}
+                    ariaInvalid={!!replyErrors.body}
+                  />
+                )}
               />
-              {replyErrors.body && <p className="text-red-500 text-xs mt-1" role="alert">{replyErrors.body.message}</p>}
+              {replyErrors.body && <p className="text-red-500 text-xs" role="alert">{replyErrors.body.message as string}</p>}
+              <AttachmentUploader
+                mode="immediate"
+                value={replyAttachments}
+                onChange={setReplyAttachments}
+                upload={async (file) => {
+                  const r = await ticketsApi.uploadAttachment(id, file);
+                  return r.data?.data;
+                }}
+                onRemove={async (attId) => { await ticketsApi.removeAttachment(attId); }}
+              />
               <button type="submit" disabled={replyMutation.isPending} className="px-4 py-2 bg-[var(--brand-primary,#4F46E5)] text-white rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-2">
                 {replyMutation.isPending ? <><Loader2 size={16} className="animate-spin" /> Sending...</> : 'Send Reply'}
               </button>
@@ -104,7 +152,19 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
           <div className="border rounded-lg p-4 bg-white">
             <h3 className="font-medium text-sm mb-3">Actions</h3>
             <div className="space-y-2">
-              {ticket.status !== 'CLOSED' && (
+              {ticket.customerEmail && (
+                <button
+                  onClick={handleResendInvite}
+                  disabled={resending}
+                  className="w-full px-3 py-2 border rounded-md text-sm hover:bg-gray-50 min-h-[44px] flex items-center justify-center gap-2"
+                  title={`Resend tracking link to ${ticket.customerEmail}`}
+                >
+                  {resending
+                    ? <><Loader2 size={14} className="animate-spin" /> Resending...</>
+                    : <><Send size={14} /> Resend Invite Email</>}
+                </button>
+              )}
+              {ticket.status !== 'CLOSED' && ticket.status !== 'RESOLVED' && (
                 <button
                   onClick={() => setConfirmClose(true)}
                   disabled={closeMutation.isPending}
@@ -113,7 +173,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   {closeMutation.isPending ? 'Closing...' : 'Close Ticket'}
                 </button>
               )}
-              {ticket.status === 'CLOSED' && (
+              {(ticket.status === 'CLOSED' || ticket.status === 'RESOLVED') && (
                 <button
                   onClick={() => reopenMutation.mutate(id)}
                   disabled={reopenMutation.isPending}
@@ -158,5 +218,33 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
         />
       </div>
     </div>
+  );
+}
+
+function AttachmentList({ attachments }: { attachments: any[] }) {
+  if (!attachments?.length) return null;
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/api\/v1$/, '') || '';
+  return (
+    <ul className="mt-3 pt-3 border-t space-y-1">
+      {attachments.map((a) => {
+        const Icon = a.mimeType?.startsWith('image/') ? ImageIcon : FileText;
+        const href = a.url?.startsWith('http') ? a.url : `${apiBase}${a.url}`;
+        const infected = a.scanStatus === 'INFECTED';
+        return (
+          <li key={a._id} className="flex items-center gap-2 text-xs">
+            <Icon size={14} className="text-gray-500 shrink-0" />
+            {infected ? (
+              <span className="text-red-600">{a.filename} (blocked: malware detected)</span>
+            ) : (
+              <a href={href} target="_blank" rel="noreferrer" className="text-[var(--brand-primary,#4F46E5)] hover:underline truncate">
+                {a.filename}
+              </a>
+            )}
+            <span className="text-gray-400">({Math.max(1, Math.ceil((a.size || 0) / 1024))} KB)</span>
+            {a.scanStatus === 'PENDING' && <span className="text-amber-600 text-[10px] uppercase">Scanning</span>}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

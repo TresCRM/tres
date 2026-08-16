@@ -70,14 +70,14 @@ describe("Ticket Reopen (Phase 3.1)", () => {
     expect(res.body.data.status).toBe("REOPENED");
   });
 
-  test("cannot reopen an ACTIVE ticket", async () => {
+  test("cannot reopen an OPEN ticket", async () => {
     const created = await request(app).post("/api/v1/tickets")
       .set("Authorization", `Bearer ${token}`)
       .send({ subject: "Active", body: "test", priority: "LOW", customerEmail: "c2@t.com" });
     const res = await request(app).post(`/api/v1/tickets/${created.body.data._id}/reopen`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("invalid_status");
+    expect(res.body.error).toBe("invalid_transition");
   });
 
   test("reopen 404 for nonexistent ticket", async () => {

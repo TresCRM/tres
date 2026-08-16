@@ -8,6 +8,7 @@ import pino from "pino";
 import pinoHttp from "pino-http";
 import { errorHandler as activityHandler } from "./middlewares/error";
 import { surveyOnTicketClosed } from "./events/handlers/surveyOnTicketClosed";
+import { notifyStaffOnReply } from "./events/handlers/notifyStaffOnReply";
 import { errorHandler } from "./middlewares/errorHandler";
 import { rateLimiter } from "./middlewares/security";
 import { mountDocs } from "./docs/swagger";
@@ -17,14 +18,13 @@ import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
 import { metricsMiddleware } from "./observability/metrics";
 import { correlationId } from "./observability/correlationId";
-import { initSentry, sentryRequestHandler, sentryErrorHandler } from "./observability/sentry";
+import { sentryRequestHandler, sentryErrorHandler, setupSentryExpress } from "./observability/sentry";
 import { ENV } from "./config/env";
-
-initSentry();
 
 const log = pino({ transport: { target: "pino-pretty" } });
 export const app = express();
 surveyOnTicketClosed(process.env.APP_HOST || undefined);
+notifyStaffOnReply();
 
 // HTTPS redirect in production (respects reverse proxy X-Forwarded-Proto)
 if (ENV.IS_PROD) {
@@ -49,11 +49,22 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: "2mb" }));
-app.use(pinoHttp({ logger: log }));
+app.use(pinoHttp({
+  logger: log,
+  customProps: (req: any) => ({
+    tenantId: req.auth?.tid,
+    userId: req.auth?.sub,
+    requestId: req.ctx?.requestId,
+  }),
+}));
 app.use(rateLimiter);
 app.use(metricsMiddleware);
 app.use(auditMiddleware);
 app.use(csrfProtection);
+
+// Password expiry enforcement (write ops blocked until password changed)
+import { passwordExpiryGuard } from "./middlewares/passwordExpiry";
+app.use(passwordExpiryGuard);
 
 // CSP with per-request nonce for inline styles
 app.use((_req, res, next) => {
@@ -81,6 +92,12 @@ app.use('/uploads', (_req, res, next) => {
   next();
 }, require('express').static(require('path').resolve(process.cwd(), 'uploads')));
 
+// API version header
+app.use((_req, res, next) => {
+  res.setHeader("X-API-Version", "v1");
+  next();
+});
+
 // Routes
 mountRoutes(app);
 // API Docs (Swagger UI + generated OpenAPI)
@@ -89,6 +106,7 @@ mountDocs(app);
 app.use(activityHandler);
 // app.use(notFound);
 app.use(sentryErrorHandler());
+setupSentryExpress(app);
 app.use(errorHandler);
 
 export default app;

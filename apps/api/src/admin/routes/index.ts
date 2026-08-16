@@ -30,6 +30,7 @@ import { adminAuditRouter } from "./audit";
 import { adminSettingsRouter } from "./settings";
 import { adminAnnouncementsRouter } from "./announcements";
 import { adminErrorsRouter } from "./errors";
+import { adminPlansRouter } from "./plans";
 
 export const adminRouter = Router();
 
@@ -52,3 +53,4 @@ adminRouter.use("/audit", adminAuditRouter);
 adminRouter.use("/settings", adminSettingsRouter);
 adminRouter.use("/announcements", adminAnnouncementsRouter);
 adminRouter.use("/errors", adminErrorsRouter);
+adminRouter.use("/plans", adminPlansRouter);

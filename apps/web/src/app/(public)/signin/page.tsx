@@ -5,10 +5,32 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { authApi } from '@/lib/apiClient';
+import { authApi, subscriptionsApi } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/authStore';
 import Image from 'next/image';
 import { LogIn, Building2, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
+
+/** After login, check subscription status and route accordingly */
+async function resolvePostLoginRoute(user: { roles?: string[] }, passwordExpired: boolean, mfaSetupRequired: boolean): Promise<string> {
+  const ADMIN_ROLES = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL'];
+  const isAdmin = user.roles?.some((r: string) => ADMIN_ROLES.includes(r));
+
+  if (passwordExpired) return isAdmin ? '/admin/security' : '/settings/change-password';
+  if (mfaSetupRequired) return isAdmin ? '/admin/security?setup=required' : '/settings/security?setup=required';
+  if (isAdmin) return '/admin';
+
+  // Check if tenant has an active subscription
+  try {
+    const res = await subscriptionsApi.me();
+    const sub = res.data?.data;
+    if (sub && ['ACTIVE', 'GRACE'].includes(sub.status)) {
+      return '/dashboard';
+    }
+  } catch {
+    // If the check fails (e.g. no subscription at all), redirect to plan selection
+  }
+  return '/choose-plan';
+}
 
 const schema = z.object({
   tenantSlug: z.string().min(1, 'Workspace slug is required'),
@@ -35,11 +57,8 @@ function MfaStep({ ticket, onBack, onError }: { ticket: string; onBack: () => vo
       const res = await authApi.mfaVerify({ mfaTicket: ticket, code: code.trim() });
       const { accessToken, user, tenant, passwordExpired, mfaSetupRequired } = res.data;
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
-      const ADMIN_ROLES = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL'];
-      const isAdmin = user.roles?.some((r: string) => ADMIN_ROLES.includes(r));
-      if (passwordExpired) router.push('/settings/change-password');
-      else if (isAdmin) router.push('/admin');
-      else router.push('/dashboard');
+      const route = await resolvePostLoginRoute(user, passwordExpired, mfaSetupRequired);
+      router.push(route);
     } catch (err: any) {
       const errCode = err?.response?.data?.error;
       if (errCode === 'mfa_expired') {
@@ -111,7 +130,21 @@ function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
   const { setAuth } = useAuthStore();
-  const [error, setError] = useState('');
+  // Map OAuth redirect errors to user-friendly messages
+  const oauthErrorMessages: Record<string, string> = {
+    oauth_denied: 'Google sign-in was cancelled.',
+    oauth_no_account: `No account found for ${params.get('email') || 'that email'}. Please sign up first, then use Google to sign in.`,
+    oauth_tenant_inactive: 'Your workspace is inactive. Please contact support.',
+    oauth_token_failed: 'Google sign-in failed. Please try again.',
+    oauth_userinfo_failed: 'Could not retrieve your Google profile. Please try again.',
+    oauth_server_error: 'Something went wrong during Google sign-in. Please try again.',
+    oauth_invalid_state: 'Google sign-in session expired. Please try again.',
+    oauth_no_code: 'Google sign-in did not return an authorization code. Please try again.',
+    oauth_no_email: 'Google did not provide an email address. Please try again.',
+  };
+  const initialError = oauthErrorMessages[params.get('error') || ''] || '';
+
+  const [error, setError] = useState(initialError);
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [mfaTicket, setMfaTicket] = useState<string | null>(null);
@@ -139,12 +172,8 @@ function SignInForm() {
 
       const { accessToken, user, tenant, passwordExpired, mfaSetupRequired } = res.data;
       setAuth({ id: user.id, email: user.email, tenantId: tenant.id, tenantSlug: tenant.slug, roles: user.roles }, accessToken);
-      const ADMIN_ROLES = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'CUSTOMER_CARE', 'SPECIAL'];
-      const isAdmin = user.roles?.some((r: string) => ADMIN_ROLES.includes(r));
-      if (passwordExpired) router.push(isAdmin ? '/admin/security' : '/settings/change-password');
-      else if (mfaSetupRequired) router.push(isAdmin ? '/admin/security?setup=required' : '/settings/security?setup=required');
-      else if (isAdmin) router.push('/admin');
-      else router.push('/dashboard');
+      const route = await resolvePostLoginRoute(user, passwordExpired, mfaSetupRequired);
+      router.push(route);
     } catch (err: any) {
       const code = err?.response?.data?.error;
       const messages: Record<string, string> = {
@@ -172,7 +201,7 @@ function SignInForm() {
     <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Image src="/icon-192.png" alt="TRES CRM" width={56} height={56} className="mx-auto mb-4 rounded-2xl" priority />
+          <Image src="/logo-md.png" alt="TRES CRM" width={72} height={24} className="mx-auto mb-4" priority />
           <h1 className="text-2xl font-bold">Welcome back</h1>
           <p className="text-gray-500 text-sm mt-1">Sign in to your TRES CRM workspace</p>
         </div>
@@ -220,7 +249,30 @@ function SignInForm() {
           </button>
         </form>
 
-        <div className="mt-8 text-center space-y-3">
+        {/* Google OAuth divider + button */}
+        <div className="mt-6 flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-xs text-gray-400 uppercase tracking-wide">or</span>
+          <div className="flex-1 h-px bg-gray-200" />
+        </div>
+
+        <a
+          href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/oauth/google`}
+          className="mt-4 w-full py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.01 24.01 0 0 0 0 21.56l7.98-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          Sign in with Google
+        </a>
+
+        <div className="mt-6 text-center space-y-3">
+          <Link href="/forgot-password" className="text-sm text-[var(--brand-primary,#4F46E5)] hover:underline">
+            Forgot your password?
+          </Link>
           <p className="text-sm text-gray-500">
             Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-[var(--brand-primary,#4F46E5)] font-medium hover:underline">Create one free</Link>

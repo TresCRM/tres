@@ -1,0 +1,64 @@
+replicaCount: 1
+
+image:
+  repository: trescrmacr.azurecr.io/tres-crm-workers
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Workers do not expose HTTP traffic
+service:
+  enabled: false
+
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+
+configMapRef:
+  name: tres-crm-workers-config
+
+secretRef:
+  name: tres-crm-workers-secrets
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

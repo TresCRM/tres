@@ -10,15 +10,30 @@ registry.registerComponent("securitySchemes", "bearerAuth", {
   scheme: "bearer",
   bearerFormat: "JWT",
 });
+// Register API key auth
+registry.registerComponent("securitySchemes", "ApiKeyAuth", {
+  type: "apiKey",
+  in: "header",
+  name: "x-api-key",
+});
+
+export function generateOpenApiDocument() {
+  const generator = new OpenApiGeneratorV3(registry.definitions);
+  return generator.generateDocument({
+    openapi: "3.0.0",
+    info: {
+      title: "TRES CRM API",
+      version: "1.0.0",
+      description:
+        "REST API for TRES CRM — tickets, customers, messaging, live chat, and more.",
+    },
+    servers: [{ url: "/api/v1" }],
+    security: [{ bearerAuth: [] }, { ApiKeyAuth: [] }],
+  });
+}
 
 export function mountDocs(app: Express) {
-  const generator = new OpenApiGeneratorV3(registry.definitions);
-  const doc = generator.generateDocument({
-    openapi: "3.0.0",
-    info: { title: "TRES CRM API", version: "1.0.0" },
-     // default security (can be turned off per-path)
-    security: [{ bearerAuth: [] }],
-  });
+  const doc = generateOpenApiDocument();
 
   // Serve JSON for Postman import by URL
   app.get("/docs/openapi.json", (_req, res) => res.json(doc));

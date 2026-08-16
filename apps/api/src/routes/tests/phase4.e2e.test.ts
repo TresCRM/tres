@@ -118,10 +118,10 @@ describe("PRD Pricing Alignment (Phase 4.1)", () => {
 
   test("company plans use discount formula for prepay", () => {
     const plan = getPlanByCode("CO-20")!;
-    // Quarter: 19900 * 3 * 0.95 = 56715
+    // Quarter: 19900 * 3 * 0.95 = 56715 (5% off)
     expect(priceForInterval(plan, "QUARTER")).toBe(56715);
-    // Annual: 19900 * 12 * 0.88 = 210144
-    expect(priceForInterval(plan, "ANNUAL")).toBe(210144);
+    // Annual: 19900 * 12 * 0.80 = 191040 (20% off per Business Plan)
+    expect(priceForInterval(plan, "ANNUAL")).toBe(191040);
   });
 
   test("custom plan returns 0 for all intervals", () => {

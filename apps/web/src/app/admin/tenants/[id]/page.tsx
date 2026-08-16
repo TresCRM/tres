@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { adminApi } from '@/lib/apiClient';
-import { ArrowLeft, Building2, Users, Ticket, CreditCard, AlertCircle, Loader2, Ban, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Building2, Users, Ticket, CreditCard, AlertCircle, Loader2, Ban, CheckCircle, Trash2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function TenantDetailPage() {
@@ -13,6 +13,10 @@ export default function TenantDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [confirmSlug, setConfirmSlug] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<any>(null);
 
   useEffect(() => {
     adminApi.tenants.get(id)
@@ -32,6 +36,21 @@ export default function TenantDetailPage() {
       setError(e?.response?.data?.message || 'Action failed');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!data || confirmSlug !== data.slug) return;
+    setDeleting(true);
+    setError('');
+    try {
+      const r = await adminApi.tenants.remove(id, confirmSlug);
+      setDeleteResult(r.data);
+      // Wait 3 seconds to show the success message, then navigate
+      setTimeout(() => router.push('/admin/tenants'), 3500);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Delete failed');
+      setDeleting(false);
     }
   }
 
@@ -117,6 +136,107 @@ export default function TenantDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Danger Zone — SUPER_ADMIN only */}
+      <div className="rounded-xl border-2 border-red-300 bg-red-50 p-5 shadow-sm">
+        <div className="flex items-start gap-3 mb-4">
+          <AlertTriangle size={20} className="text-red-600 mt-0.5 shrink-0" />
+          <div>
+            <h2 className="font-semibold text-sm text-red-900">Danger Zone</h2>
+            <p className="text-xs text-red-700 mt-1">
+              Permanently delete this tenant and ALL associated data — users, tickets, customers,
+              subscriptions, messages, and every record tied to this workspace. This action cannot
+              be undone.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => { setShowDeleteDialog(true); setConfirmSlug(''); }}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 min-h-[40px]"
+        >
+          <Trash2 size={14} /> Delete Tenant Permanently
+        </button>
+      </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+        >
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
+            {deleteResult ? (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckCircle size={24} className="text-green-500" />
+                  <h3 className="text-lg font-bold text-gray-900">Tenant Deleted</h3>
+                </div>
+                <p className="text-sm text-gray-700 mb-4">{deleteResult.message}</p>
+                <div className="bg-gray-50 rounded-md p-3 text-xs text-gray-600 max-h-40 overflow-auto">
+                  {Object.entries(deleteResult.data?.deletedCounts || {}).map(([k, v]) => (
+                    <div key={k} className="flex justify-between">
+                      <span>{k}</span>
+                      <span className="font-mono">{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-3">Redirecting to tenant list...</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertTriangle size={24} className="text-red-600" />
+                  <h3 id="delete-dialog-title" className="text-lg font-bold text-gray-900">Permanently Delete Tenant</h3>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+                  <p className="text-sm text-red-900 font-medium mb-2">This will permanently remove:</p>
+                  <ul className="text-xs text-red-800 space-y-0.5 list-disc list-inside">
+                    <li>The tenant <strong>{data.branding?.name || data.slug}</strong></li>
+                    <li>{data.stats?.userCount || 0} users</li>
+                    <li>{data.stats?.ticketCount || 0} tickets and all comments/attachments</li>
+                    <li>All customers, subscriptions, invoices, messages, knowledge articles</li>
+                    <li>API keys, webhooks, widget tokens, SLA policies</li>
+                    <li>All 30+ related collections</li>
+                  </ul>
+                </div>
+                <p className="text-sm text-gray-700 mb-2">
+                  Type <code className="bg-gray-100 px-1.5 py-0.5 rounded font-semibold">{data.slug}</code> below to confirm:
+                </p>
+                <input
+                  type="text"
+                  value={confirmSlug}
+                  onChange={e => setConfirmSlug(e.target.value)}
+                  placeholder={data.slug}
+                  className="w-full border rounded-md px-3 py-2.5 text-sm mb-4 font-mono"
+                  autoComplete="off"
+                  autoFocus
+                />
+                {error && (
+                  <div className="text-sm text-red-700 mb-3">{error}</div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowDeleteDialog(false); setConfirmSlug(''); setError(''); }}
+                    disabled={deleting}
+                    className="flex-1 px-4 py-2.5 border rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting || confirmSlug !== data.slug}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium disabled:bg-red-300 hover:bg-red-700 min-h-[44px]"
+                  >
+                    {deleting ? <><Loader2 size={14} className="animate-spin" /> Deleting...</> : <><Trash2 size={14} /> Delete Forever</>}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

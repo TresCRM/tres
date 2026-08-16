@@ -118,4 +118,22 @@ export function attachWebsocket(server: Server) {
     }
     busPublish("ticket.events", payload);
   };
+
+  // helper for messaging events — notify specific user(s)
+  (global as any).notifyUser = (tenantId: string, userId: string, payload: any) => {
+    for (const c of CLIENTS.values()) {
+      if (c.tenantId === tenantId && c.userId === userId) {
+        c.ws.send(JSON.stringify(payload));
+      }
+    }
+  };
+
+  // helper for tenant-wide broadcast (notifications, chat queue updates, etc.)
+  (global as any).notifyTenant = (tenantId: string, payload: any) => {
+    for (const c of CLIENTS.values()) {
+      if (c.tenantId === tenantId) {
+        c.ws.send(JSON.stringify(payload));
+      }
+    }
+  };
 }

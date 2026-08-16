@@ -109,15 +109,15 @@ describe("Full-Text Search (Phase 13.3)", () => {
     await Ticket.create([
       {
         tenantId, subject: "Password reset not working", body: "I cannot reset my password via the email link",
-        createdBy: new mongoose.Types.ObjectId(), status: "ACTIVE", priority: "HIGH",
+        createdBy: new mongoose.Types.ObjectId(), status: "OPEN", priority: "HIGH",
       },
       {
         tenantId, subject: "Billing inquiry", body: "I have a question about my invoice charges",
-        createdBy: new mongoose.Types.ObjectId(), status: "ACTIVE", priority: "LOW",
+        createdBy: new mongoose.Types.ObjectId(), status: "OPEN", priority: "LOW",
       },
       {
         tenantId, subject: "Feature request for dark mode", body: "Please add dark mode to the dashboard",
-        createdBy: new mongoose.Types.ObjectId(), status: "ACTIVE", priority: "MEDIUM",
+        createdBy: new mongoose.Types.ObjectId(), status: "OPEN", priority: "MEDIUM",
       },
     ]);
   });
@@ -180,7 +180,7 @@ describe("API Compression (Phase 13.2)", () => {
     for (let i = 0; i < 10; i++) {
       await Ticket.create({
         tenantId, subject: `Compression test ticket ${i}`, body: `This is a test ticket body with enough content to test compression ${i}`.repeat(5),
-        createdBy: new mongoose.Types.ObjectId(), status: "ACTIVE", priority: "LOW",
+        createdBy: new mongoose.Types.ObjectId(), status: "OPEN", priority: "LOW",
       });
     }
 

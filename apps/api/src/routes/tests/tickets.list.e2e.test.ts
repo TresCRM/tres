@@ -20,8 +20,8 @@ beforeAll(async () => {
 
   // seed tickets
   await Ticket.create([
-    { tenantId:t._id, subject:"Login issue", body:"Can't login", status:"ACTIVE", priority:"HIGH", createdBy:u._id, tags:["auth"] },
-    { tenantId:t._id, subject:"Billing Q", body:"Invoice?", status:"ACTIVE", priority:"LOW", createdBy:u._id, tags:["billing"] },
+    { tenantId:t._id, subject:"Login issue", body:"Can't login", status:"OPEN", priority:"HIGH", createdBy:u._id, tags:["auth"] },
+    { tenantId:t._id, subject:"Billing Q", body:"Invoice?", status:"OPEN", priority:"LOW", createdBy:u._id, tags:["billing"] },
     { tenantId:t._id, subject:"UI bug", body:"Button off", status:"CLOSED", priority:"MEDIUM", createdBy:u._id, tags:["ui"] }
   ]);
 });
@@ -38,7 +38,7 @@ test("list tickets default", async () => {
 test("filter by status & search", async () => {
   const r = await request(app).get("/api/v1/tickets")
     .set("Authorization", `Bearer ${token}`)
-    .query({ status:"ACTIVE", q:"invoice" })
+    .query({ status:"OPEN", q:"invoice" })
     .expect(200);
   expect(r.body.data.length).toBe(1);
   expect(r.body.data[0].subject).toMatch(/Billing/i);

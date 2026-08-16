@@ -1,0 +1,69 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/tres-crm
+  HELM_RELEASE: tres-crm
+
+jobs:
+  deploy-staging:
+    name: Auto-deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Set kube context
+        uses: azure/k8s-set-context@v4
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Deploy API to staging
+        run: |
+          helm upgrade --install ${HELM_RELEASE}-api ./infrastructure/helm/api \
+            -f ./infrastructure/helm/values-staging.yaml \
+            --set image.repository=${{ env.IMAGE_PREFIX }}/api \
+            --set image.tag=${{ github.sha }} \
+            --namespace tres-staging \
+            --create-namespace \
+            --wait --timeout 5m
+
+      - name: Deploy Web to staging
+        run: |
+          helm upgrade --install ${HELM_RELEASE}-web ./infrastructure/helm/web \
+            -f ./infrastructure/helm/values-staging.yaml \
+            --set image.repository=${{ env.IMAGE_PREFIX }}/web \
+            --set image.tag=${{ github.sha }} \
+            --namespace tres-staging \
+            --wait --timeout 5m
+
+      - name: Deploy Workers to staging
+        run: |
+          helm upgrade --install ${HELM_RELEASE}-workers ./infrastructure/helm/workers \
+            -f ./infrastructure/helm/values-staging.yaml \
+            --set image.repository=${{ env.IMAGE_PREFIX }}/workers \
+            --set image.tag=${{ github.sha }} \
+            --namespace tres-staging \
+            --wait --timeout 5m
+
+      - name: Post-deploy health check
+        run: |
+          echo "Waiting for pods to stabilize..."
+          sleep 15
+          STAGING_API="https://api.staging.tres-crm.com"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_API}/healthz" --max-time 30 || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Staging health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "Staging health check passed (HTTP $HTTP_CODE)"

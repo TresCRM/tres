@@ -56,10 +56,22 @@ adminTenantsRouter.get("/", requireAdminPermission("ADMIN_TENANT_READ"), async (
     .limit(q.limit)
     .lean();
 
+  const tenantIds = items.map(t => t._id);
+  const owners = await User.find(
+    { tenantId: { $in: tenantIds }, roles: "OWNER" },
+    { tenantId: 1, email: 1, createdAt: 1 },
+  ).sort({ createdAt: 1 }).lean();
+  const ownerByTenant = new Map<string, string>();
+  for (const u of owners) {
+    const key = String(u.tenantId);
+    if (!ownerByTenant.has(key)) ownerByTenant.set(key, u.email);
+  }
+  const enriched = items.map(t => ({ ...t, ownerEmail: ownerByTenant.get(String(t._id)) || null }));
+
   const nextCursor = items.length === q.limit ? String(items[items.length - 1]._id) : undefined;
   const total = await Tenant.countDocuments(q.q || q.plan || q.isActive !== undefined ? filter : {});
 
-  res.json({ data: items, nextCursor, total });
+  res.json({ data: enriched, nextCursor, total });
 });
 
 // GET single tenant with stats
@@ -123,4 +135,53 @@ adminTenantsRouter.post("/:id/activate", requireAdminPermission("ADMIN_TENANT_SU
   ).lean();
   if (!tenant) return res.status(404).json({ error: "not_found" });
   res.json({ data: tenant });
+});
+
+// DELETE tenant — HARD DELETE, requires SUPER_ADMIN permission + typed slug confirmation.
+// Purges the tenant and ALL associated data across 30+ collections.
+// This is a destructive, unrecoverable operation.
+const DeleteBody = z.object({
+  confirmSlug: z.string().min(1),
+});
+
+adminTenantsRouter.delete("/:id", requireAdminPermission("ADMIN_TENANT_DELETE"), async (req, res) => {
+  try {
+    const body = DeleteBody.parse(req.body);
+    const tenantId = asObjectId(req.params.id);
+
+    // Load tenant to verify existence + match confirmation slug
+    const tenant = await Tenant.findById(tenantId).lean();
+    if (!tenant) return res.status(404).json({ error: "not_found" });
+
+    // Confirmation guard: the caller must type the exact slug to confirm
+    if (body.confirmSlug !== tenant.slug) {
+      return res.status(400).json({
+        error: "confirmation_mismatch",
+        message: `Confirmation slug must exactly match '${tenant.slug}'`,
+      });
+    }
+
+    // Capture acting admin for audit trail (recorded by adminAudit middleware)
+    const auth = (req as AuthRequest).auth;
+    req.log?.warn?.(
+      { tenantId: String(tenantId), tenantSlug: tenant.slug, actorId: auth?.sub },
+      "Tenant hard-delete initiated"
+    );
+
+    // Perform the purge
+    const { purgeTenant } = await import("../../services/tenantPurge");
+    const result = await purgeTenant(String(tenantId));
+
+    return res.json({
+      ok: true,
+      message: `Tenant '${result.tenantSlug}' and ${result.totalDeleted} associated records permanently deleted.`,
+      data: result,
+    });
+  } catch (e: any) {
+    if (e.name === "ZodError") {
+      return res.status(400).json({ error: "invalid_request", details: e.message });
+    }
+    req.log?.error?.({ err: e }, "Tenant delete failed");
+    return res.status(500).json({ error: "internal_error", message: e.message });
+  }
 });

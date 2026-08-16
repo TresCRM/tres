@@ -153,6 +153,30 @@ export function useUpdateBranding() {
   });
 }
 
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { firstName?: string; lastName?: string }) => authApi.updateProfile(data).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['auth', 'me'] }),
+  });
+}
+
+export function useCheckout() {
+  return useMutation({
+    mutationFn: (data: { planCode: string; interval: string; email: string; callbackUrl: string }) =>
+      subscriptionsApi.checkout(data).then(r => r.data),
+  });
+}
+
+export function useActivateSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { planCode: string; prepayMonths?: number }) =>
+      subscriptionsApi.activate(data).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['subscription'] }),
+  });
+}
+
 // ─── Surveys ───────────────────────────────────────
 
 export function useSurveyAnalytics(id: string) {

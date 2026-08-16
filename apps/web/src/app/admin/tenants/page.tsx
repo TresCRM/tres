@@ -77,17 +77,23 @@ export default function TenantsPage() {
           {tenants.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-500">No tenants found</div>
           ) : tenants.map(t => (
-            <Link key={t._id} href={`/admin/tenants/${t._id}`} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors min-h-[56px]">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+            <Link key={t._id} href={`/admin/tenants/${t._id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 transition-colors min-h-[56px]">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                   <Building2 size={16} className="text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-medium">{t.branding?.name || t.slug}</p>
-                  <p className="text-xs text-gray-500">{t.slug}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{t.branding?.name || t.slug}</p>
+                  <p className="text-xs text-gray-500 truncate">{t.slug}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="hidden md:block min-w-0 flex-1 text-sm text-gray-600 truncate">
+                {t.ownerEmail || <span className="text-gray-400">—</span>}
+              </div>
+              <div className="hidden sm:block text-xs text-gray-500 whitespace-nowrap">
+                {t.createdAt ? new Date(t.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${
                   t.plan === 'COMPANY' ? 'bg-purple-100 text-purple-700' :
                   t.plan === 'INDIVIDUAL' ? 'bg-blue-100 text-blue-700' :

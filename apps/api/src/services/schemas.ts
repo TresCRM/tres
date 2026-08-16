@@ -9,7 +9,7 @@ export const SignupSchema = z.object({
   owner: z.object({
     firstName: z.string().trim().min(1),
     lastName: z.string().trim().min(1),
-    email: z.email(),
+    email: z.email().trim().toLowerCase(),
     password: z.string()
       .min(10, "Password must be at least 10 characters")
       .regex(/[A-Z]/, "Password must contain at least one uppercase letter")

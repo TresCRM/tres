@@ -11,7 +11,7 @@ import AuthGuard from '@/components/guards/AuthGuard';
 import {
   LayoutDashboard, Building2, Users, CreditCard, Ticket, BarChart3,
   FileText, Shield, Settings, Megaphone, Menu, X, Moon, Sun, LogOut,
-  ArrowLeft, ShieldAlert, AlertTriangle, Lock,
+  ArrowLeft, ShieldAlert, AlertTriangle, Lock, Tag,
 } from 'lucide-react';
 
 const nav = [
@@ -19,6 +19,7 @@ const nav = [
   { href: '/admin/tenants', label: 'Tenants', icon: Building2 },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { href: '/admin/plans', label: 'Plans & Pricing', icon: Tag },
   { href: '/admin/tickets', label: 'Tickets', icon: Ticket },
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/admin/content', label: 'Content', icon: FileText },
@@ -47,28 +48,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }`;
 
   const sidebar = (
-    <nav className="flex flex-col gap-0.5 p-3" aria-label="Admin navigation">
-      <Link href="/admin" className="flex items-center gap-2 px-3 mb-2">
-        <Image src="/logo-sm.png" alt="TRES CRM" width={73} height={40} />
-      </Link>
-      <div className="px-3 mb-3">
-        <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-red-600 bg-red-50 px-2 py-1 rounded">
-          <Shield size={12} /> Admin Panel
+    <div className="flex flex-col h-full">
+      {/* Sticky header: logo + Admin badge — height matches main top bar (h-14) */}
+      <div className="shrink-0 h-14 px-3 flex items-center justify-between border-b bg-white">
+        <Link href="/admin" className="flex items-center px-3">
+          <Image src="/logo-sm.png" alt="TRES CRM" width={32} height={32} />
+        </Link>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+          <Shield size={10} /> Admin
         </span>
       </div>
-      {nav.map(i => (
-        <Link key={i.href} href={i.href} className={linkClass(i.href, i.exact)} onClick={() => setSidebarOpen(false)}>
-          <i.icon size={18} strokeWidth={isActive(i.href, i.exact) ? 2.5 : 2} />
-          {i.label}
-        </Link>
-      ))}
-      <div className="mt-4 pt-4 border-t">
-        <Link href="/dashboard" className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors min-h-[44px]">
+
+      {/* Scrollable nav region */}
+      <nav
+        className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-0.5 sidebar-scroll"
+        aria-label="Admin navigation"
+      >
+        {nav.map(i => (
+          <Link
+            key={i.href}
+            href={i.href}
+            className={linkClass(i.href, i.exact)}
+            onClick={() => setSidebarOpen(false)}
+          >
+            <i.icon size={18} strokeWidth={isActive(i.href, i.exact) ? 2.5 : 2} />
+            {i.label}
+          </Link>
+        ))}
+      </nav>
+
+      {/* Sticky footer: Back to Console */}
+      <div className="shrink-0 p-3 border-t bg-white">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors min-h-[44px]"
+        >
           <ArrowLeft size={18} />
           Back to Console
         </Link>
       </div>
-    </nav>
+    </div>
   );
 
   return (
@@ -78,7 +97,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </a>
       <div className="min-h-screen flex">
         {/* Desktop sidebar */}
-        <aside className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-white md:fixed md:inset-y-0 md:z-20" aria-label="Admin sidebar">
+        <aside
+          className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-white md:fixed md:inset-y-0 md:z-20 md:h-screen"
+          aria-label="Admin sidebar"
+        >
           {sidebar}
         </aside>
 
@@ -86,13 +108,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {sidebarOpen && (
           <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Admin navigation">
             <div className="fixed inset-0 bg-black/30" onClick={() => setSidebarOpen(false)} />
-            <aside className="fixed inset-y-0 left-0 w-64 bg-white shadow-xl z-50 overflow-y-auto">
-              <div className="flex justify-end p-2">
-                <button onClick={() => setSidebarOpen(false)} className="p-2 min-h-[44px] min-w-[44px] rounded-md hover:bg-gray-100" aria-label="Close menu">
+            <aside className="fixed inset-y-0 left-0 w-64 bg-white shadow-xl z-50 flex flex-col">
+              <div className="shrink-0 flex justify-end p-2 border-b">
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="p-2 min-h-[44px] min-w-[44px] rounded-md hover:bg-gray-100"
+                  aria-label="Close menu"
+                >
                   <X size={20} />
                 </button>
               </div>
-              {sidebar}
+              <div className="flex-1 min-h-0">
+                {sidebar}
+              </div>
             </aside>
           </div>
         )}

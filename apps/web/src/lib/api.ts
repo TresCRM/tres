@@ -46,6 +46,14 @@ api.interceptors.response.use(
   async (error) => {
     const { response, config } = error || {};
 
+    // Password expiry enforcement: redirect to change-password
+    if (response?.status === 403 && response?.data?.error === 'password_expired') {
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/settings/change-password')) {
+        window.location.href = '/settings/change-password?expired=1';
+      }
+      return Promise.reject(error);
+    }
+
     // MFA enforcement: redirect to setup if API returns mfa_required
     if (response?.status === 403 && (response?.data?.error === 'mfa_required' || response?.data?.error === 'admin_mfa_required')) {
       if (typeof window !== 'undefined') {
@@ -64,6 +72,8 @@ api.interceptors.response.use(
     if (response?.status === 401 && !config._retry) {
       config._retry = true;
 
+      let token: string | null;
+
       if (!isRefreshing) {
         isRefreshing = true;
         try {
@@ -73,16 +83,20 @@ api.interceptors.response.use(
             { withCredentials: true }
           );
           _accessToken = data?.accessToken ?? null;
-          onRefreshed(data?.accessToken ?? null);
+          token = data?.accessToken ?? null;
+          onRefreshed(token);
         } catch {
           _accessToken = null;
+          token = null;
           onRefreshed(null);
         } finally {
           isRefreshing = false;
         }
+      } else {
+        // Another request is already refreshing — wait for it
+        token = await new Promise<string|null>(res => waiters.push(res));
       }
 
-      const token = await new Promise<string|null>(res => waiters.push(res));
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
         return api(config);
