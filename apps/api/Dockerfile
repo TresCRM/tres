@@ -1,11 +1,11 @@
 # ---- build ----
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY pnpm-lock.yaml package.json ./
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps apps
 COPY packages packages
 RUN corepack enable && pnpm -v && pnpm install --frozen-lockfile
-RUN pnpm -C apps/api dlx tsc -p apps/api/tsconfig.json
+RUN pnpm exec tsc -p apps/api/tsconfig.json
 
 # ---- runtime ----
 FROM node:20-alpine
