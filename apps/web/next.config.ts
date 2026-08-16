@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
+  // Emit .next/standalone so Dockerfile.web can copy a minimal runtime
+  output: "standalone",
+  // The monorepo lockfile lives at the repo root; Next 15 warns without this.
+  outputFileTracingRoot: path.join(__dirname, "..", ".."),
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
 
