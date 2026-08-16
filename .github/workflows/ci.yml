@@ -105,6 +105,17 @@ jobs:
   openapi-validation:
     name: OpenAPI Spec Validation
     runs-on: ubuntu-latest
+    env:
+      # docs:gen imports src/config/env, which requires these at load time.
+      # No DB connection is opened during generation — placeholders are fine.
+      NODE_ENV: test
+      MONGO_URI: mongodb://localhost:27017/openapi_gen
+      JWT_SECRET: openapi-gen-secret
+      SURVEY_JWT_SECRET: openapi-gen-survey
+      SMTP_DEFAULT_HOST: localhost
+      SMTP_DEFAULT_PORT: "1025"
+      SMTP_DEFAULT_SECURE: "false"
+      EMAILS_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4
 
