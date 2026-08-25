@@ -15,7 +15,7 @@ const DEFAULT_TTL_CONFIG = {
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
-async function processTtl() {
+async function processTtl(now = new Date()) {
   try {
     const tenants = await Tenant.find({ isActive: true }).lean();
 
@@ -23,7 +23,6 @@ async function processTtl() {
       const config = { ...DEFAULT_TTL_CONFIG, ...(tenant as any).ttlConfig };
       if (!config.enabled) continue;
 
-      const now = new Date();
       const tickets = await Ticket.find({
         tenantId: tenant._id,
         status: { $in: config.applicableStatuses },
@@ -101,6 +100,7 @@ export function startTtlCron(intervalMs = 3600000) {
   log.info({ intervalMs }, "Starting TTL cron");
   processTtl(); // run immediately
   timer = setInterval(processTtl, intervalMs);
+  timer.unref();
 }
 
 export function stopTtlCron() {
@@ -110,3 +110,6 @@ export function stopTtlCron() {
     log.info("TTL cron stopped");
   }
 }
+
+// Exported for tests and one-shot runs; mirrors billing.worker's runOnce(now).
+export { processTtl as runOnce };

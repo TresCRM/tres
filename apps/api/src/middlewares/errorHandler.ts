@@ -1,3 +1,6 @@
+// Loads pino-http's Express augmentation so `req.log` is typed regardless of
+// which entrypoint pulls this module in (e.g. docs/generate.ts, which never imports app.ts).
+import type {} from "pino-http";
 import type { Request, Response, NextFunction } from "express";
 import type { AuthRequest } from "../types/auth";
 import { ZodError } from "zod";

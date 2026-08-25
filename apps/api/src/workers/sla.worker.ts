@@ -7,10 +7,8 @@ const log = pino({ name: "sla-worker" });
 const TERMINAL_STATUSES = ["CLOSED", "RESOLVED"];
 let timer: ReturnType<typeof setInterval> | null = null;
 
-async function processSlaBreaches() {
+async function processSlaBreaches(now = new Date()) {
   try {
-    const now = new Date();
-
     // First response breaches
     const firstResponseBreaches = await Ticket.find({
       "sla.firstResponseDue": { $lt: now },
@@ -66,6 +64,7 @@ export function startSlaCron(intervalMs = 300000) {
   log.info({ intervalMs }, "Starting SLA cron");
   processSlaBreaches(); // run immediately
   timer = setInterval(processSlaBreaches, intervalMs);
+  timer.unref();
 }
 
 export function stopSlaCron() {
@@ -75,3 +74,6 @@ export function stopSlaCron() {
     log.info("SLA cron stopped");
   }
 }
+
+// Exported for tests and one-shot runs; mirrors billing.worker's runOnce(now).
+export { processSlaBreaches as runOnce };

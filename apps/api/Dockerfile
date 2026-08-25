@@ -7,7 +7,7 @@ COPY packages packages
 RUN corepack enable && pnpm -v && pnpm install --frozen-lockfile
 RUN pnpm exec tsc -p apps/api/tsconfig.json
 # Prune to prod-only deps for the runtime image (keeps only what apps/api needs at runtime).
-RUN pnpm install --frozen-lockfile --prod
+RUN pnpm install --frozen-lockfile --prod --config.confirmModulesPurge=false
 
 # ---- runtime ----
 FROM node:20-alpine

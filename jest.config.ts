@@ -26,7 +26,20 @@ const config: Config = {
     "!apps/api/src/**/types/**",
     "!**/*.d.ts",
     "!**/index.ts",
-    "!**/app.ts"           
+    "!**/app.ts",
+    // Process entrypoint: wires app.ts + listeners, exercised end-to-end, not by unit tests.
+    "!apps/api/src/server.ts",
+    // One-shot operational code (CLI helpers, DB migrations, static seed content).
+    // Not application logic; including it only skews the denominator.
+    "!apps/api/src/scripts/**",
+    "!apps/api/src/seeds/**",
+    "!apps/api/src/migrations/**",
+    "!apps/api/src/utils/migrations/**",
+    // Seed CLIs that happen to live under utils/ (each ends in run().catch(process.exit)).
+    // Note: utils/sla-assign.ts is real logic and stays in the denominator.
+    "!apps/api/src/utils/seed.ts",
+    "!apps/api/src/utils/seed-demo.ts",
+    "!apps/api/src/utils/seed-survey-template.ts"
   ],
   coveragePathIgnorePatterns: [
     "/node_modules/",

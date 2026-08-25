@@ -7,7 +7,7 @@ const log = pino({ name: "anomaly-worker" });
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
-async function processAnomalyDetection() {
+async function processAnomalyDetection(now = new Date()) {
   try {
     const tenants = await Tenant.find({ isActive: true }).lean();
     let anomalyCount = 0;
@@ -17,7 +17,6 @@ async function processAnomalyDetection() {
       if (tenant.aiFeatures?.anomalyDetection === false) continue;
 
       const tenantId = String(tenant._id);
-      const now = new Date();
       const oneHourAgo = new Date(now.getTime() - 3600000);
 
       // ─── Volume spike detection ────────────────────
@@ -116,6 +115,7 @@ export function startAnomalyCron(intervalMs = 900000) {
   log.info({ intervalMs }, "Starting anomaly detection cron");
   processAnomalyDetection(); // run immediately
   timer = setInterval(processAnomalyDetection, intervalMs);
+  timer.unref();
 }
 
 export function stopAnomalyCron() {
@@ -125,3 +125,6 @@ export function stopAnomalyCron() {
     log.info("Anomaly detection cron stopped");
   }
 }
+
+// Exported for tests and one-shot runs; mirrors billing.worker's runOnce(now).
+export { processAnomalyDetection as runOnce };

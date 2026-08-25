@@ -1,3 +1,4 @@
+import type { Types } from "mongoose";
 import { Ticket } from "../models/Ticket";
 import { Tenant } from "../models/Tenant";
 import { getAiProvider } from "../services/ai/ai-provider";
@@ -16,12 +17,13 @@ interface PeriodStats {
   topIssueTypes: { type: string; count: number }[];
 }
 
+// Takes the ObjectId rather than a string: `countDocuments` casts strings for
+// us, but `$match` inside an aggregation pipeline does not, so a string here
+// silently matches nothing and every digest reports empty aggregates.
 async function gatherStats(
-  tenantId: string,
+  tenantId: Types.ObjectId,
   since: Date
 ): Promise<PeriodStats> {
-  const now = new Date();
-
   const [totalCreated, totalClosed, totalOpen] = await Promise.all([
     Ticket.countDocuments({ tenantId, createdAt: { $gte: since } }),
     Ticket.countDocuments({
@@ -115,9 +117,8 @@ function buildStatsNewsletter(
   ].join("\n");
 }
 
-async function processNewsletters() {
+async function processNewsletters(now = new Date()) {
   try {
-    const now = new Date();
     const dayOfWeek = now.getUTCDay(); // 0 = Sunday
     const dayOfMonth = now.getUTCDate();
 
@@ -142,7 +143,7 @@ async function processNewsletters() {
 
       const tenantId = String(tenant._id);
       const tenantName = tenant.branding?.name || tenant.slug;
-      const stats = await gatherStats(tenantId, since);
+      const stats = await gatherStats(tenant._id, since);
 
       // Skip if no activity at all
       if (stats.totalCreated === 0) {
@@ -217,6 +218,7 @@ export function startNewsletterCron(intervalMs = 86400000) {
   log.info({ intervalMs }, "Starting newsletter cron");
   processNewsletters(); // run immediately
   timer = setInterval(processNewsletters, intervalMs);
+  timer.unref();
 }
 
 export function stopNewsletterCron() {
@@ -226,3 +228,6 @@ export function stopNewsletterCron() {
     log.info("Newsletter cron stopped");
   }
 }
+
+// Exported for tests and one-shot runs; mirrors billing.worker's runOnce(now).
+export { processNewsletters as runOnce };

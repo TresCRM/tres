@@ -2,6 +2,9 @@
  * @module admin/routes/tenants
  * Platform-level tenant management: list, get, update, suspend/activate.
  */
+// Loads pino-http's Express augmentation so `req.log` is typed regardless of
+// which entrypoint pulls this module in (e.g. docs/generate.ts, which never imports app.ts).
+import type {} from "pino-http";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdminAuth, requireAdminPermission, adminAudit } from "../middleware";
