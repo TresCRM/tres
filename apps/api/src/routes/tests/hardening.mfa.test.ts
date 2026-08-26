@@ -6,7 +6,9 @@
 import request from "supertest";
 import type { Request, Response, NextFunction } from "express";
 import { testSetup, testTeardown } from "../../tests/helpers";
+import crypto from "crypto";
 import { User } from "../../models/User";
+import { MfaChallenge } from "../../models/MfaChallenge";
 import { Tenant } from "../../models/Tenant";
 import { requireMfaForPrivileged } from "../../middlewares/auth";
 import { hashPassword, signAccessToken } from "../../utils/auth";
@@ -267,5 +269,147 @@ describe("MFA ticket binding", () => {
       .send({ mfaTicket: res.body.mfaTicket, code: "000000" });
 
     expect(verify.status).toBe(401);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Challenges live in a TTL collection, not process memory            */
+/* ------------------------------------------------------------------ */
+
+describe("MFA challenge persistence", () => {
+  const UA = "Mozilla/5.0 (LegitimateBrowser)";
+
+  // Earlier blocks leave unconsumed challenges behind; start from a clean
+  // collection so the counts below mean what they say.
+  beforeEach(async () => {
+    await MfaChallenge.deleteMany({});
+  });
+
+  async function loginForTicket() {
+    const secret = generateSecret();
+    const { user, slug } = await makeUser({ mfa: { secret, enabled: true } });
+    const res = await request(app)
+      .post("/api/v1/auth/login")
+      .set("User-Agent", UA)
+      .send({ email: user.email, password: PASSWORD, tenantSlug: slug });
+    return { res, secret, user, slug };
+  }
+
+  function verify(ticket: string, code: string, ua = UA) {
+    return request(app)
+      .post("/api/v1/auth/mfa-verify")
+      .set("User-Agent", ua)
+      .send({ mfaTicket: ticket, code });
+  }
+
+  test("the challenge is written to the collection, not held in memory", async () => {
+    const { res } = await loginForTicket();
+
+    const stored = await MfaChallenge.findOne({
+      ticketHash: crypto.createHash("sha256").update(res.body.mfaTicket).digest("hex"),
+    }).lean();
+
+    expect(stored).toBeTruthy();
+    expect(stored!.attempts).toBe(0);
+  });
+
+  test("the raw ticket is never stored", async () => {
+    const { res } = await loginForTicket();
+    const ticket = res.body.mfaTicket;
+
+    const all = await MfaChallenge.find({}).lean();
+    expect(JSON.stringify(all)).not.toContain(ticket);
+  });
+
+  test("the challenge carries an expiry for the TTL sweeper", async () => {
+    const { res } = await loginForTicket();
+
+    const stored = await MfaChallenge.findOne({
+      ticketHash: crypto.createHash("sha256").update(res.body.mfaTicket).digest("hex"),
+    }).lean();
+
+    expect(stored!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(stored!.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+  });
+
+  test("the TTL index exists so challenges cannot accumulate", async () => {
+    await loginForTicket();
+
+    const indexes = await MfaChallenge.collection.indexes();
+    const ttl = indexes.find((i: any) => i.key?.expiresAt === 1);
+    expect(ttl).toBeTruthy();
+    expect(ttl!.expireAfterSeconds).toBe(0);
+  });
+
+  test("a challenge past its expiry is refused even before the sweeper runs", async () => {
+    // Mongo removes expired documents on a roughly one-minute cycle, so the
+    // handler must judge by the timestamp rather than by the row existing.
+    const { res, secret } = await loginForTicket();
+    const ticketHash = crypto.createHash("sha256").update(res.body.mfaTicket).digest("hex");
+    await MfaChallenge.updateOne(
+      { ticketHash },
+      { $set: { expiresAt: new Date(Date.now() - 1000) } }
+    );
+
+    const verified = await verify(res.body.mfaTicket, generateTOTP(secret));
+
+    expect(verified.status).toBe(401);
+    expect(verified.body.error).toBe("mfa_expired");
+  });
+
+  test("a successful verification consumes the challenge", async () => {
+    const { res, secret } = await loginForTicket();
+
+    await verify(res.body.mfaTicket, generateTOTP(secret));
+
+    expect(await MfaChallenge.countDocuments({})).toBe(0);
+  });
+
+  test("a consumed challenge cannot be replayed", async () => {
+    const { res, secret } = await loginForTicket();
+
+    await verify(res.body.mfaTicket, generateTOTP(secret));
+    const replay = await verify(res.body.mfaTicket, generateTOTP(secret));
+
+    expect(replay.status).toBe(401);
+    expect(replay.body.error).toBe("mfa_expired");
+  });
+
+  test("a wrong code leaves the challenge usable and counts the attempt", async () => {
+    const { res, secret } = await loginForTicket();
+    const ticketHash = crypto.createHash("sha256").update(res.body.mfaTicket).digest("hex");
+
+    const bad = await verify(res.body.mfaTicket, "000000");
+    expect(bad.status).toBe(401);
+    expect(bad.body.error).toBe("invalid_mfa_code");
+    expect((await MfaChallenge.findOne({ ticketHash }).lean())!.attempts).toBe(1);
+
+    // A typo must not force a new login.
+    const good = await verify(res.body.mfaTicket, generateTOTP(secret));
+    expect(good.status).toBe(200);
+  });
+
+  test("the challenge is dropped after too many wrong codes", async () => {
+    const { res, secret } = await loginForTicket();
+
+    for (let i = 0; i < 4; i++) {
+      expect((await verify(res.body.mfaTicket, "000000")).body.error).toBe("invalid_mfa_code");
+    }
+    const fifth = await verify(res.body.mfaTicket, "000000");
+
+    expect(fifth.status).toBe(401);
+    expect(fifth.body.error).toBe("mfa_expired");
+    expect(await MfaChallenge.countDocuments({})).toBe(0);
+
+    // Even the right code no longer works — the challenge is gone.
+    expect((await verify(res.body.mfaTicket, generateTOTP(secret))).status).toBe(401);
+  });
+
+  test("a binding mismatch removes the challenge from the collection", async () => {
+    const { res, secret } = await loginForTicket();
+
+    await verify(res.body.mfaTicket, generateTOTP(secret), "curl/8.0 (attacker)");
+
+    expect(await MfaChallenge.countDocuments({})).toBe(0);
   });
 });

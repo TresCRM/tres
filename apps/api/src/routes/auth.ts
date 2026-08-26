@@ -16,16 +16,20 @@ import { registry } from "../docs/swagger";
 import { z } from "zod";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { logSecurityEvent } from "../services/securityLogger";
+import { MfaChallenge } from "../models/MfaChallenge";
 extendZodWithOpenApi(z);
 
 const PASSWORD_MAX_AGE_DAYS = ENV.PASSWORD_MAX_AGE_DAYS;
-// Pending MFA challenges — in-memory, short-lived (5 min TTL)
-const mfaPending = new Map<string, {
-  userId: string; tenantId: string; roles: string[]; email: string;
-  expiresAt: number;
-  /** Binds the ticket to the client that requested it. */
-  clientBinding: string;
-}>();
+
+/** How long a second-factor challenge stays valid. */
+const MFA_TICKET_TTL_MS = 5 * 60_000;
+/** Wrong codes tolerated per challenge before it is dropped. */
+const MFA_MAX_ATTEMPTS = 5;
+
+/** Only the digest is stored, so hash on the way in and on every lookup. */
+function hashTicket(ticket: string): string {
+  return crypto.createHash("sha256").update(ticket).digest("hex");
+}
 
 /**
  * Fingerprint of the requesting client, used to pin an MFA ticket to it.
@@ -38,14 +42,10 @@ const mfaPending = new Map<string, {
 function clientBinding(req: any): string {
   const ip = req.ip || "";
   const ua = (req.headers["user-agent"] as string) || "";
-  return crypto.createHash("sha256").update(`${ip}
-${ua}`).digest("hex");
+  // JSON-encode the pair so the two fields cannot be shifted into one
+  // another to forge a matching fingerprint.
+  return crypto.createHash("sha256").update(JSON.stringify([ip, ua])).digest("hex");
 }
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of mfaPending) { if (v.expiresAt < now) mfaPending.delete(k); }
-}, 60_000);
-
 export const authRouter = Router();
 const DISABLED = ENV.EMAILS_DISABLED;
 
@@ -342,13 +342,13 @@ authRouter.post("/login", async (req, res) => {
     // If MFA is enabled, return challenge instead of tokens
     if (user.mfa?.enabled) {
       const ticket = crypto.randomBytes(32).toString("hex");
-      mfaPending.set(ticket, {
-        userId: String(user._id),
-        tenantId: String(tenant._id),
-        roles: user.roles,
+      await MfaChallenge.create({
+        ticketHash: hashTicket(ticket),
+        userId: user._id,
+        tenantId: tenant._id,
         email: user.email,
-        expiresAt: Date.now() + 5 * 60_000, // 5 min
         clientBinding: clientBinding(req),
+        expiresAt: new Date(Date.now() + MFA_TICKET_TTL_MS),
       });
       logSecurityEvent({ event: "auth.mfa.challenge", ...secCtx });
       return res.json({ mfaRequired: true, mfaTicket: ticket });
@@ -369,31 +369,38 @@ authRouter.post("/mfa-verify", async (req, res) => {
       code: z.string().min(1),
     }).parse(req.body);
 
-    const pending = mfaPending.get(mfaTicket);
-    if (!pending || pending.expiresAt < Date.now()) {
-      mfaPending.delete(mfaTicket);
+    const ticketHash = hashTicket(mfaTicket);
+    const pending = await MfaChallenge.findOne({ ticketHash });
+    // Mongo's TTL sweeper is periodic, so an expired challenge can still be
+    // present — the timestamp is the authority, not the document's existence.
+    if (!pending || pending.expiresAt.getTime() < Date.now()) {
+      if (pending) await MfaChallenge.deleteOne({ ticketHash });
       return res.status(401).json({ error: "mfa_expired", message: "MFA session expired. Please sign in again." });
     }
+
+    const secCtxMfa = {
+      userId: String(pending.userId),
+      tenantId: String(pending.tenantId),
+      email: pending.email,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"] as string,
+    };
 
     // The ticket only works from the client that asked for it. Burn it on
     // mismatch so a leaked ticket cannot be retried from elsewhere.
     if (pending.clientBinding !== clientBinding(req)) {
-      mfaPending.delete(mfaTicket);
+      await MfaChallenge.deleteOne({ ticketHash });
       logSecurityEvent({
         event: "auth.mfa.failed",
-        userId: pending.userId,
-        tenantId: pending.tenantId,
-        email: pending.email,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"] as string,
+        ...secCtxMfa,
         metadata: { reason: "client_binding_mismatch" },
       });
       return res.status(401).json({ error: "mfa_invalid", message: "MFA session is not valid for this client." });
     }
 
-    const user = await User.findById(asObjectId(pending.userId));
+    const user = await User.findById(pending.userId);
     if (!user || !user.mfa?.enabled) {
-      mfaPending.delete(mfaTicket);
+      await MfaChallenge.deleteOne({ ticketHash });
       return res.status(401).json({ error: "bad_credentials" });
     }
 
@@ -412,14 +419,29 @@ authRouter.post("/mfa-verify", async (req, res) => {
     }
 
     if (!valid) {
-      logSecurityEvent({ event: "auth.mfa.failed", userId: pending.userId, tenantId: pending.tenantId, email: pending.email, ip: req.ip, userAgent: req.headers["user-agent"] as string });
+      // A wrong code leaves the challenge usable so a typo does not force a new
+      // login, but not indefinitely: six digits are brute-forceable inside the
+      // five-minute window without a cap.
+      const attempts = pending.attempts + 1;
+      if (attempts >= MFA_MAX_ATTEMPTS) {
+        await MfaChallenge.deleteOne({ ticketHash });
+        logSecurityEvent({
+          event: "auth.mfa.failed",
+          ...secCtxMfa,
+          metadata: { reason: "max_attempts_exceeded", attempts },
+        });
+        return res.status(401).json({ error: "mfa_expired", message: "Too many incorrect codes. Please sign in again." });
+      }
+
+      await MfaChallenge.updateOne({ ticketHash }, { $set: { attempts } });
+      logSecurityEvent({ event: "auth.mfa.failed", ...secCtxMfa, metadata: { attempts } });
       return res.status(401).json({ error: "invalid_mfa_code" });
     }
 
-    mfaPending.delete(mfaTicket);
-    logSecurityEvent({ event: "auth.mfa.success", userId: pending.userId, tenantId: pending.tenantId, email: pending.email, ip: req.ip, userAgent: req.headers["user-agent"] as string });
+    await MfaChallenge.deleteOne({ ticketHash });
+    logSecurityEvent({ event: "auth.mfa.success", ...secCtxMfa });
 
-    const tenant = await Tenant.findById(asObjectId(pending.tenantId));
+    const tenant = await Tenant.findById(pending.tenantId);
     if (!tenant) return res.status(404).json({ error: "tenant_not_found" });
 
     return completeLogin(req, res, user, tenant);
