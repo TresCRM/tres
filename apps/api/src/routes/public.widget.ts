@@ -30,8 +30,11 @@ async function resolveWidgetToken(tokenStr: string, origin?: string) {
   const wt = await WidgetToken.findOne({ token: tokenStr, isActive: true }).lean();
   if (!wt) return null;
 
-  // Domain validation (skip if no domains configured or in test mode)
-  if (wt.allowedDomains.length > 0 && !ENV.IS_TEST) {
+  // Domain validation. Fail closed: a token with no configured domains is not
+  // an "allow anything" token — it is an unconfigured one, and accepting every
+  // origin would let any site embed it.
+  if (!ENV.IS_TEST) {
+    if (wt.allowedDomains.length === 0) return null;
     if (!origin) return null;
     try {
       const originUrl = new URL(origin);
@@ -218,7 +221,9 @@ publicWidgetRouter.get("/widget/tickets/:id", async (req, res) => {
     if (String(ticket.tenantId) !== payload.tid) return res.status(403).json({ error: "access_denied" });
     if (ticket.customerEmail?.toLowerCase() !== payload.email.toLowerCase()) return res.status(403).json({ error: "access_denied" });
 
-    const comments = await Comment.find({ ticketId: ticket._id })
+    // Internal notes are agent-only and must never reach the customer widget.
+    // Omitting isInternal from .select() is not enough — the body still ships.
+    const comments = await Comment.find({ ticketId: ticket._id, isInternal: { $ne: true } })
       .sort({ createdAt: 1 })
       .select("body isAgent createdAt")
       .lean();

@@ -41,7 +41,7 @@ Index (jump to module):
 
 ## 2. API — Multi-Tenancy Isolation
 
-- [ ] **[P0]** `apps/api/src/routes/emailTracking.ts:80-84` — `Customer.updateMany({ email })` is **not** scoped by `tenantId`. Bounce event for one tenant flips flags across all tenants. Add `tenantId` filter.
+- [x] **[P0]** `apps/api/src/routes/emailTracking.ts:80-84` — `Customer.updateMany({ email })` is **not** scoped by `tenantId`. Bounce event for one tenant flips flags across all tenants. Add `tenantId` filter. — **FIXED 2026-08-26: tenant resolved from event metadata or the recorded outbound EmailMessage; skips the write when unresolvable rather than writing across tenants. Also added the emailBounced/emailBouncedAt/bounceReason paths to CustomerSchema — strict mode was silently dropping them, so the flag was never persisted at all**
 - [ ] **[P0]** `apps/api/src/routes/paystackWebhook.ts:172-178` — Falls back to `paystackCustomerCode` alone if `tenantId` missing. Reject webhook if metadata `tenantId` is absent.
 - [ ] **[P1]** `apps/api/src/routes/public.tickets.ts:204-246` — `String(ticket.tenantId) !== payload.tid` risks coercion mismatch when `tenantId` is null. Add explicit null guard → 404.
 - [ ] **[P1]** Introduce a repository/query helper that requires `tenantId` as a mandatory arg for every Mongoose call (e.g., `withTenant(model, tenantId).find(...)`). Enforce via lint rule.
@@ -49,7 +49,7 @@ Index (jump to module):
 
 ## 3. API — Data Models & Indexes
 
-- [ ] **[P0]** `apps/api/src/models/Subscription.ts` — No unique constraint on `tenantId`. Add `{ tenantId: 1 }` unique index.
+- [x] **[P0]** `apps/api/src/models/Subscription.ts` — No unique constraint on `tenantId`. Add `{ tenantId: 1 }` unique index. — **VERIFIED ALREADY DONE: Subscription.ts:70 has index({ tenantId: 1 }, { unique: true })**
 - [ ] **[P1]** `apps/api/src/models/Comment.ts` — Add `maxlength: 50000` on `body` to enforce schema-level cap matching API validation.
 - [ ] **[P1]** `apps/api/src/models/Ticket.ts:53` — `customFields: Map<string, any>` accepts any value. Restrict to primitives (string/number/bool/date) and cap map size to 20.
 - [ ] **[P1]** `apps/api/src/models/WidgetToken.ts` — Add `expiresAt`, `lastUsedAt`, and a TTL index (default 90 days).
@@ -60,8 +60,8 @@ Index (jump to module):
 
 ## 4. API — Route Handlers & Response Hygiene
 
-- [ ] **[P0]** `apps/api/src/routes/public.tickets.ts:221-229` — Public ticket-comment fetch does **not** filter `isInternal`. Internal comments leak to unauthenticated customers. Add `isInternal: { $ne: true }` to the query.
-- [ ] **[P0]** `apps/api/src/routes/public.widget.ts:221` — Widget ticket GET returns all comments including internal ones. Same fix.
+- [x] **[P0]** `apps/api/src/routes/public.tickets.ts:221-229` — Public ticket-comment fetch does **not** filter `isInternal`. Internal comments leak to unauthenticated customers. Add `isInternal: { $ne: true }` to the query. — **VERIFIED ALREADY DONE: both comment queries (lines 222, 392) filter isInternal: { $ne: true }**
+- [x] **[P0]** `apps/api/src/routes/public.widget.ts:221` — Widget ticket GET returns all comments including internal ones. Same fix. — **FIXED 2026-08-26: added isInternal: { $ne: true }. Note .select() alone was insufficient — it hid the flag but still returned the note body**
 - [ ] **[P1]** `apps/api/src/routes/ext.ts:98,128` — External API responses return full Mongoose documents (leaks internal IDs). Use `.select()` / DTO projection.
 - [ ] **[P1]** `apps/api/src/routes/public.tickets.ts:325-326,337` — Pagination via `parseInt` without Zod validation; cursor-less skip/limit can double-return rows on inserts. Move to Zod validation and cursor-based pagination.
 - [ ] **[P1]** Audit all list endpoints for missing `.select()` projection — exclude internal-only fields (`__v`, internal IDs, PII where not needed).
@@ -70,8 +70,8 @@ Index (jump to module):
 
 ## 5. API — Public / Widget / Ext Endpoints
 
-- [ ] **[P0]** `apps/api/src/routes/public.widget.ts:29-50` — Domain allowlist uses `.endsWith('.' + hostname)`. `example.com.evil.com` will pass `.endsWith('.evil.com')`. Replace with exact hostname match (case-insensitive) or a strict subdomain rule.
-- [ ] **[P0]** `apps/api/src/routes/public.widget.ts:34,120-121` — If `allowedDomains` is empty, all origins are accepted. Fail closed.
+- [x] **[P0]** `apps/api/src/routes/public.widget.ts:29-50` — Domain allowlist uses `.endsWith('.' + hostname)`. `example.com.evil.com` will pass `.endsWith('.evil.com')`. Replace with exact hostname match (case-insensitive) or a strict subdomain rule. — **VERIFIED ALREADY DONE: exact hostname match or true subdomain; the described suffix bypass does not apply**
+- [x] **[P0]** `apps/api/src/routes/public.widget.ts:34,120-121` — If `allowedDomains` is empty, all origins are accepted. Fail closed. — **FIXED 2026-08-26: now fails closed — a token with no configured domains is rejected instead of accepting every origin**
 - [ ] **[P0]** `apps/api/src/routes/public.tickets.ts` — No rate limit on public ticket creation. Add IP + email compound throttle (10/hour/IP, 3/day/email).
 - [ ] **[P0]** `apps/api/src/routes/public.widget.ts` — No rate limit on widget endpoints. Add per-token throttle (5 tickets/hour, 1000 requests/hour).
 - [ ] **[P1]** `apps/api/src/routes/public.tickets.ts:138-142` — Customer token returned in HTTP response body AND email. Return via email only; response returns ticket ID + masked email.
