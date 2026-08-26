@@ -56,6 +56,10 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Invoic
   // One invoice per provider transaction. A webhook can be delivered more than
   // once, and each delivery would otherwise bill the tenant again.
   if (providerReference) {
+    // The unique index backs this up for concurrent deliveries, so make sure it
+    // is actually built before relying on it. init() is memoised by mongoose.
+    await Invoice.init();
+
     const existing = await Invoice.findOne({ providerReference }).lean();
     if (existing) return existing as InvoiceDoc;
   }
@@ -86,6 +90,14 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Invoic
       },
     ],
     providerReference,
+  }).catch(async (err: any) => {
+    // Two deliveries can clear the lookup above simultaneously; the index
+    // rejects the loser, which should still get the invoice, not an error.
+    if (err?.code === 11000 && providerReference) {
+      const raced = await Invoice.findOne({ providerReference }).lean();
+      if (raced) return raced as InvoiceDoc;
+    }
+    throw err;
   });
 
   return invoice;

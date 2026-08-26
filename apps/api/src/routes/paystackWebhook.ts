@@ -51,6 +51,13 @@ paystackWebhookRouter.post(
     // digest of the exact payload and so is stable across retries.
     const eventKey = event.data?.id ? String(event.data.id) : sig;
     try {
+      // The guard *is* the unique index, so it has to exist before we lean on
+      // it. Mongoose builds indexes in the background after connecting, which
+      // leaves a window where a duplicate insert simply succeeds and the event
+      // is processed twice. init() resolves once the index is in place and is
+      // memoised, so this costs nothing after the first call.
+      await ProcessedWebhookEvent.init();
+
       await ProcessedWebhookEvent.create({
         provider: "paystack",
         eventKey,

@@ -127,6 +127,21 @@ describe("paystack webhook — replay safety", () => {
     expect(claimed!.eventType).toBe("charge.success");
   });
 
+  test("the unique index the guard depends on is in place before it is used", async () => {
+    // Regression: mongoose builds indexes in the background, so a duplicate
+    // insert can succeed in the window before the index exists — the guard then
+    // silently does nothing. This failed in CI while passing locally.
+    const tenant = await makeTenant();
+    await postEvent(chargeSuccess(String(tenant._id)));
+
+    const indexes = await ProcessedWebhookEvent.collection.indexes();
+    const guard = indexes.find(
+      (i: any) => i.key?.provider === 1 && i.key?.eventKey === 1
+    );
+    expect(guard).toBeTruthy();
+    expect(guard!.unique).toBe(true);
+  });
+
   test("a redelivery is acknowledged without reprocessing", async () => {
     const tenant = await makeTenant();
 
