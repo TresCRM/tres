@@ -6,6 +6,8 @@
  * - requireExactRole: check exact role match (no hierarchy)
  * - requirePermission: check user has all specified permissions
  */
+// Loads pino-http's Express augmentation so `req.log` is typed here.
+import type {} from "pino-http";
 import type { Request, Response, NextFunction } from "express";
 import { verifyToken } from "../utils/auth";
 import type { AuthPayload, AuthRequest } from "../types/auth";
@@ -126,5 +128,11 @@ export function requireMfaForPrivileged(req: Request, res: Response, next: NextF
       }
       next();
     })
-    .catch(() => next()); // DB error — fail open
+    .catch((err) => {
+      // Fail closed. This gate exists to keep privileged sessions behind MFA;
+      // letting the request through because the lookup failed hands exactly
+      // that to anyone who can make the lookup fail.
+      req.log?.error?.({ err, sub }, "MFA enforcement lookup failed — denying");
+      return res.status(403).json({ error: "mfa_required", message: "MFA must be enabled for admin accounts." });
+    });
 }

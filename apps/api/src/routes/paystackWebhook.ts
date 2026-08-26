@@ -195,13 +195,13 @@ async function handlePaymentFailed(data: Record<string, any>) {
   const meta = data.metadata || {};
   const tenantId = meta.tenantId;
 
-  // Try metadata first, then look up by customer code
-  let sub;
-  if (tenantId) {
-    sub = await Subscription.findOne({ tenantId });
-  } else if (data.customer?.customer_code) {
-    sub = await Subscription.findOne({ paystackCustomerCode: data.customer.customer_code });
-  }
+  // Metadata only. A customer code is not a tenant identifier: codes are
+  // reused across a Paystack account and can be supplied by the payload, so
+  // falling back to one lets an event be applied to the wrong tenant's
+  // subscription. Without an explicit tenantId there is nothing safe to do.
+  if (!tenantId) return;
+
+  const sub = await Subscription.findOne({ tenantId });
   if (!sub) return;
 
   sub.failedPaymentCount += 1;

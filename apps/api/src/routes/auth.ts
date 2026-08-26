@@ -20,7 +20,27 @@ extendZodWithOpenApi(z);
 
 const PASSWORD_MAX_AGE_DAYS = ENV.PASSWORD_MAX_AGE_DAYS;
 // Pending MFA challenges — in-memory, short-lived (5 min TTL)
-const mfaPending = new Map<string, { userId: string; tenantId: string; roles: string[]; email: string; expiresAt: number }>();
+const mfaPending = new Map<string, {
+  userId: string; tenantId: string; roles: string[]; email: string;
+  expiresAt: number;
+  /** Binds the ticket to the client that requested it. */
+  clientBinding: string;
+}>();
+
+/**
+ * Fingerprint of the requesting client, used to pin an MFA ticket to it.
+ *
+ * The ticket is a bearer credential for the second factor: anything that leaks
+ * it (a proxy log, a shared screen, a referrer) otherwise completes MFA from
+ * anywhere within the 5-minute window. Hashed so neither the address nor the
+ * user agent is retained in memory in the clear.
+ */
+function clientBinding(req: any): string {
+  const ip = req.ip || "";
+  const ua = (req.headers["user-agent"] as string) || "";
+  return crypto.createHash("sha256").update(`${ip}
+${ua}`).digest("hex");
+}
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of mfaPending) { if (v.expiresAt < now) mfaPending.delete(k); }
@@ -328,6 +348,7 @@ authRouter.post("/login", async (req, res) => {
         roles: user.roles,
         email: user.email,
         expiresAt: Date.now() + 5 * 60_000, // 5 min
+        clientBinding: clientBinding(req),
       });
       logSecurityEvent({ event: "auth.mfa.challenge", ...secCtx });
       return res.json({ mfaRequired: true, mfaTicket: ticket });
@@ -352,6 +373,22 @@ authRouter.post("/mfa-verify", async (req, res) => {
     if (!pending || pending.expiresAt < Date.now()) {
       mfaPending.delete(mfaTicket);
       return res.status(401).json({ error: "mfa_expired", message: "MFA session expired. Please sign in again." });
+    }
+
+    // The ticket only works from the client that asked for it. Burn it on
+    // mismatch so a leaked ticket cannot be retried from elsewhere.
+    if (pending.clientBinding !== clientBinding(req)) {
+      mfaPending.delete(mfaTicket);
+      logSecurityEvent({
+        event: "auth.mfa.failed",
+        userId: pending.userId,
+        tenantId: pending.tenantId,
+        email: pending.email,
+        ip: req.ip,
+        userAgent: req.headers["user-agent"] as string,
+        metadata: { reason: "client_binding_mismatch" },
+      });
+      return res.status(401).json({ error: "mfa_invalid", message: "MFA session is not valid for this client." });
     }
 
     const user = await User.findById(asObjectId(pending.userId));

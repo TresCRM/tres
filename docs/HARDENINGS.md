@@ -31,8 +31,8 @@ Index (jump to module):
 
 ## 1. API — Auth, RBAC & Session
 
-- [ ] **[P0]** `apps/api/src/middlewares/auth.ts:129` — `requireMfaForPrivileged` fails open on DB error (`.catch(() => next())`). Log and return 403 instead.
-- [ ] **[P0]** `apps/api/src/routes/auth.ts:323-330` — MFA ticket is not bound to IP/User-Agent; a leaked ticket can complete MFA. Bind ticket to (userId, IP-hash, UA-hash) and require CSRF on `/mfa-verify`.
+- [x] **[P0]** `apps/api/src/middlewares/auth.ts:129` — `requireMfaForPrivileged` fails open on DB error (`.catch(() => next())`). Log and return 403 instead. — **FIXED 2026-08-26: now fails closed — a lookup error logs and returns 403 instead of calling next()**
+- [x] **[P0]** `apps/api/src/routes/auth.ts:323-330` — MFA ticket is not bound to IP/User-Agent; a leaked ticket can complete MFA. Bind ticket to (userId, IP-hash, UA-hash) and require CSRF on `/mfa-verify`. — **FIXED 2026-08-26: the ticket is pinned to a SHA-256 of the requesting client's IP + User-Agent, checked on /mfa-verify, and burned on mismatch. NOTE: CSRF was not added — /mfa-verify is reached without a session and the attacker would already need the ticket, so the binding is the substantive control. SEPARATE CONCERN: mfaPending is an in-memory Map, so challenges do not survive a restart and break across replicas; moving it to a TTL collection is follow-up work**
 - [ ] **[P1]** `apps/api/src/config/env.ts:64-71` — `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` silently fall back to `JWT_SECRET`. Require both in production and enforce uniqueness at boot.
 - [ ] **[P1]** `apps/api/src/middlewares/apiKeyAuth.ts:80` — Fire-and-forget `lastUsedAt` update swallows errors. Queue via async logger or accept eventual consistency but log failures to Sentry.
 - [ ] **[P1]** `apps/api/src/models/ApiKey.ts` — No per-key brute-force protection on prefix guessing. Add rate limiter keyed by prefix (max 100 failed attempts/min).
@@ -42,7 +42,7 @@ Index (jump to module):
 ## 2. API — Multi-Tenancy Isolation
 
 - [x] **[P0]** `apps/api/src/routes/emailTracking.ts:80-84` — `Customer.updateMany({ email })` is **not** scoped by `tenantId`. Bounce event for one tenant flips flags across all tenants. Add `tenantId` filter. — **FIXED 2026-08-26: tenant resolved from event metadata or the recorded outbound EmailMessage; skips the write when unresolvable rather than writing across tenants. Also added the emailBounced/emailBouncedAt/bounceReason paths to CustomerSchema — strict mode was silently dropping them, so the flag was never persisted at all**
-- [ ] **[P0]** `apps/api/src/routes/paystackWebhook.ts:172-178` — Falls back to `paystackCustomerCode` alone if `tenantId` missing. Reject webhook if metadata `tenantId` is absent.
+- [x] **[P0]** `apps/api/src/routes/paystackWebhook.ts:172-178` — Falls back to `paystackCustomerCode` alone if `tenantId` missing. Reject webhook if metadata `tenantId` is absent. — **FIXED 2026-08-26: handlePaymentFailed now requires metadata.tenantId and no longer falls back to paystackCustomerCode. NOTE: handleSubscriptionCreate still resolves by customer code, which is the only identifier Paystack sends on subscription events — left as-is deliberately**
 - [ ] **[P1]** `apps/api/src/routes/public.tickets.ts:204-246` — `String(ticket.tenantId) !== payload.tid` risks coercion mismatch when `tenantId` is null. Add explicit null guard → 404.
 - [ ] **[P1]** Introduce a repository/query helper that requires `tenantId` as a mandatory arg for every Mongoose call (e.g., `withTenant(model, tenantId).find(...)`). Enforce via lint rule.
 - [ ] **[P2]** Add an integration test suite that seeds two tenants and asserts every list/get endpoint rejects cross-tenant IDs.

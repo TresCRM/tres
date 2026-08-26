@@ -260,3 +260,61 @@ describe("paystack webhook — unhandled and malformed events", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("paystack webhook — payment failure must name a tenant", () => {
+  test("a failure carrying a tenantId moves that subscription to GRACE", async () => {
+    const tenant = await makeTenant();
+    await postEvent(chargeSuccess(String(tenant._id)));
+
+    const res = await postEvent({
+      event: "invoice.payment_failed",
+      data: {
+        id: 920001,
+        customer: { customer_code: "CUS_test" },
+        metadata: { tenantId: String(tenant._id) },
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const sub = await Subscription.findOne({ tenantId: tenant._id }).lean();
+    expect(sub!.status).toBe("GRACE");
+  });
+
+  test("a failure with no tenantId does not fall back to the customer code", async () => {
+    // The subscription stores paystackCustomerCode CUS_test, so a customer-code
+    // fallback would find and downgrade it. Metadata is the only trusted source.
+    const tenant = await makeTenant();
+    await postEvent(chargeSuccess(String(tenant._id)));
+
+    const res = await postEvent({
+      event: "invoice.payment_failed",
+      data: {
+        id: 920002,
+        customer: { customer_code: "CUS_test" },
+        metadata: {},
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const sub = await Subscription.findOne({ tenantId: tenant._id }).lean();
+    expect(sub!.status).toBe("ACTIVE");
+    expect(sub!.failedPaymentCount).toBe(0);
+  });
+
+  test("a failure naming an unknown tenant changes nothing", async () => {
+    const tenant = await makeTenant();
+    await postEvent(chargeSuccess(String(tenant._id)));
+
+    await postEvent({
+      event: "invoice.payment_failed",
+      data: {
+        id: 920003,
+        customer: { customer_code: "CUS_test" },
+        metadata: { tenantId: String(new Types.ObjectId()) },
+      },
+    });
+
+    const sub = await Subscription.findOne({ tenantId: tenant._id }).lean();
+    expect(sub!.status).toBe("ACTIVE");
+  });
+});
