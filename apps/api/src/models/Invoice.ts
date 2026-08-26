@@ -18,6 +18,8 @@ export interface InvoiceDoc {
   taxCents: number;
   totalCents: number;
   items: InvoiceItemDoc[];
+  /** Payment-provider transaction reference this invoice was raised for. */
+  providerReference?: string;
   paidAt?: Date;
   dueDate?: Date;
   createdAt: Date;
@@ -41,10 +43,17 @@ const InvoiceSchema = new Schema<InvoiceDoc>({
   taxCents: { type: Number, default: 0 },
   totalCents: { type: Number, required: true },
   items: { type: [InvoiceItemSchema], default: [] },
+  providerReference: { type: String },
   paidAt: Date,
   dueDate: Date,
 }, { timestamps: true, versionKey: false });
 
+// Sparse + unique: at most one invoice per provider transaction, while leaving
+// invoices raised outside a provider flow (manual, renewal worker) unconstrained.
+InvoiceSchema.index(
+  { providerReference: 1 },
+  { unique: true, partialFilterExpression: { providerReference: { $type: "string" } } }
+);
 InvoiceSchema.index({ tenantId: 1, createdAt: -1 });
 InvoiceSchema.index({ tenantId: 1, status: 1 });
 

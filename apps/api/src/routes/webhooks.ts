@@ -8,6 +8,7 @@ import { randomBytes } from "crypto";
 import { requireAuth, requirePermission } from "../middlewares/auth";
 import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
+import { isSafeOutboundUrl } from "../utils/ssrf";
 import { Webhook } from "../models/Webhook";
 import { sendTestWebhook } from "../services/webhookDispatcher";
 import { registry } from "../docs/swagger";
@@ -37,7 +38,9 @@ const VALID_EVENTS = [
 ];
 
 const CreateBody = z.object({
-  url: z.string().url(),
+  url: z.string().url().refine(isSafeOutboundUrl, {
+    message: "URL must be a public http(s) endpoint (private, loopback and link-local addresses are rejected)",
+  }),
   events: z.array(z.string()).min(1).refine(
     evts => evts.every(e => VALID_EVENTS.includes(e)),
     { message: `Valid events: ${VALID_EVENTS.join(", ")}` }
@@ -45,7 +48,9 @@ const CreateBody = z.object({
 });
 
 const UpdateBody = z.object({
-  url: z.string().url().optional(),
+  url: z.string().url().refine(isSafeOutboundUrl, {
+    message: "URL must be a public http(s) endpoint (private, loopback and link-local addresses are rejected)",
+  }).optional(),
   events: z.array(z.string()).min(1).refine(
     evts => evts.every(e => VALID_EVENTS.includes(e)),
     { message: `Valid events: ${VALID_EVENTS.join(", ")}` }

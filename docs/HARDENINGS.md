@@ -80,13 +80,15 @@ Index (jump to module):
 
 ## 6. API — Billing (Paystack) & Webhooks
 
-- [ ] **[P0]** `apps/api/src/routes/paystackWebhook.ts:28-44` — Webhook signature verified, but no idempotency guard. Retries create duplicate invoices. Persist event ID in `IdempotencyResult` collection with unique index; short-circuit if seen.
-- [ ] **[P0]** `apps/api/src/routes/paystackWebhook.ts:82-95` — `handleChargeSuccess` upserts without checking existing invoice by reference. Enforce unique-by-reference lookup first.
-- [ ] **[P0]** `apps/api/src/routes/webhooks.ts:39-43` — Outbound webhook URL only Zod-validated as `.url()`. Add SSRF guard: block private/link-local/loopback ranges (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, ::1, fc00::/7).
+- [x] **[P0]** `apps/api/src/routes/paystackWebhook.ts:28-44` — Webhook signature verified, but no idempotency guard. Retries create duplicate invoices. Persist event ID in `IdempotencyResult` collection with unique index; short-circuit if seen. — **FIXED 2026-08-26: event claimed in ProcessedWebhookEvent (unique on provider+eventKey, 30d TTL) before any handler runs; duplicate key returns 200 immediately. The claim is released if processing throws, so a transient failure still gets retried**
+- [x] **[P0]** `apps/api/src/routes/paystackWebhook.ts:82-95` — `handleChargeSuccess` upserts without checking existing invoice by reference. Enforce unique-by-reference lookup first. — **FIXED 2026-08-26: Invoice gained providerReference with a unique partial index; createInvoice returns the existing invoice for a reference it has already billed**
+- [x] **[P0]** `apps/api/src/routes/webhooks.ts:39-43` — Outbound webhook URL only Zod-validated as `.url()`. Add SSRF guard: block private/link-local/loopback ranges (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, ::1, fc00::/7). — **FIXED 2026-08-26: added utils/ssrf.ts and applied it to the create/update schemas and at dispatch time. Blocks non-http(s) schemes, credentials in URL, loopback/private/link-local/CGNAT/multicast v4, ::1 fc00::/7 fe80::/10 and IPv4-mapped v6, plus localhost/.local/bare hostnames. Does not resolve DNS — see the module comment**
 - [ ] **[P1]** `apps/api/src/billing/paystackProvider.ts:159-174` — `verifyWebhook` doesn't validate payload structure. Zod-validate `{ event, data }` shape.
 - [ ] **[P1]** Add 5 s timeout on all outbound Paystack API calls in webhook path.
 - [ ] **[P1]** Add signed retries with exponential backoff on outbound webhook dispatcher; expose per-endpoint failure metrics.
 - [ ] **[P2]** Reconciliation job: nightly compare Paystack transactions vs local invoices for drift.
+
+- [x] **[P0]** `apps/api/src/app.ts:51` — **FOUND & FIXED 2026-08-26 (not previously catalogued):** `express.json()` was mounted before `mountRoutes()`, so the paystack router's `express.raw()` never saw the body. `verifyWebhook` received a parsed object and HMAC'd the string `"[object Object]"`, so **no genuine Paystack signature could ever validate** — every real webhook was rejected with 400 and no subscription could activate via webhook. The raw parser is now mounted for that path before `express.json()`.
 
 ## 7. API — Realtime / WebSocket
 

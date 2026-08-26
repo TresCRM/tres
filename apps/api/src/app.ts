@@ -48,6 +48,12 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
+// Provider webhooks are signed over the exact bytes sent, so they must keep the
+// raw body. This has to run before express.json(): body-parser marks the body
+// as read, and a later express.raw() inside the router is a no-op — the handler
+// would receive a parsed object and HMAC the string "[object Object]", which
+// can never match a real signature.
+app.use("/api/v1/webhooks/paystack", express.raw({ type: "application/json", limit: "2mb" }));
 app.use(express.json({ limit: "2mb" }));
 app.use(pinoHttp({
   logger: log,

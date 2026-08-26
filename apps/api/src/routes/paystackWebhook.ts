@@ -8,6 +8,7 @@ import { Router } from "express";
 import express from "express";
 import { Subscription } from "../models/Subscription";
 import { getPaymentProvider } from "../billing/paystackProvider";
+import { ProcessedWebhookEvent } from "../models/ProcessedWebhookEvent";
 import { createInvoice, markInvoicePaid } from "../billing/invoiceService";
 import { getPlanByCode, monthsForInterval, type PlanCode, type Interval } from "../billing/plans";
 import { logSecurityEvent } from "../services/securityLogger";
@@ -43,6 +44,26 @@ paystackWebhookRouter.post(
       return res.status(400).json({ error: "Webhook signature verification failed" });
     }
 
+    // Idempotency: claim the event before doing any work. Paystack retries
+    // until it sees a 2xx, and every handler here has side effects (extends the
+    // billing period, raises an invoice), so a replay must be a no-op.
+    // Prefer the provider's own id; fall back to the signature, which is a
+    // digest of the exact payload and so is stable across retries.
+    const eventKey = event.data?.id ? String(event.data.id) : sig;
+    try {
+      await ProcessedWebhookEvent.create({
+        provider: "paystack",
+        eventKey,
+        eventType: event.event,
+      });
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        // Already handled by an earlier delivery — acknowledge and stop.
+        return res.sendStatus(200);
+      }
+      throw err;
+    }
+
     try {
       switch (event.event) {
         case "charge.success":
@@ -69,6 +90,9 @@ paystackWebhookRouter.post(
       // Paystack expects 200 response to acknowledge receipt
       res.sendStatus(200);
     } catch (err: any) {
+      // Release the claim so Paystack's retry can reprocess — otherwise a
+      // transient failure here would permanently swallow the event.
+      await ProcessedWebhookEvent.deleteOne({ provider: "paystack", eventKey }).catch(() => {});
       console.error("[paystack-webhook] Error processing event:", event.event, err.message);
       res.status(500).json({ error: "Webhook processing failed" });
     }
@@ -122,6 +146,9 @@ async function handleChargeSuccess(data: Record<string, any>) {
     subscriptionId: String(sub._id),
     planCode,
     interval,
+    // Ties the invoice to the Paystack transaction so a redelivered
+    // charge.success returns the existing invoice instead of billing again.
+    providerReference: reference,
   });
   await markInvoicePaid(String(invoice._id));
 

@@ -36,6 +36,12 @@ export interface CreateInvoiceParams {
   planCode: PlanCode | string;
   interval: Interval;
   currency?: string;
+  /**
+   * Payment-provider transaction reference. When supplied, the invoice is
+   * unique per reference: a repeated call for the same transaction returns the
+   * existing invoice instead of raising a duplicate.
+   */
+  providerReference?: string;
 }
 
 /**
@@ -45,7 +51,14 @@ export interface CreateInvoiceParams {
  * persists the invoice document.
  */
 export async function createInvoice(params: CreateInvoiceParams): Promise<InvoiceDoc> {
-  const { tenantId, subscriptionId, planCode, interval, currency = "USD" } = params;
+  const { tenantId, subscriptionId, planCode, interval, currency = "USD", providerReference } = params;
+
+  // One invoice per provider transaction. A webhook can be delivered more than
+  // once, and each delivery would otherwise bill the tenant again.
+  if (providerReference) {
+    const existing = await Invoice.findOne({ providerReference }).lean();
+    if (existing) return existing as InvoiceDoc;
+  }
 
   const plan = getPlanByCode(planCode);
   if (!plan) {
@@ -72,6 +85,7 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Invoic
         totalCents,
       },
     ],
+    providerReference,
   });
 
   return invoice;
