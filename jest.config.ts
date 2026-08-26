@@ -47,8 +47,14 @@ const config: Config = {
     "apps/api/src/docs/",
     "apps/api/src/events/", 
   ],
+  // Ratchet: set just under what CI actually measures, so coverage can only go
+  // up. Headroom is deliberately under ~1% — new code is expected to arrive
+  // with its own tests rather than spend the slack left by existing tests.
+  // Measure against a CI-like environment (no .env) before raising these:
+  // several modules are gated on optional credentials and report higher
+  // coverage on a machine that has them.
   coverageThreshold: {
-    global: { branches: 42, functions: 69, lines: 72, statements: 68 }
+    global: { branches: 46, functions: 70, lines: 72, statements: 69 }
   },
   collectCoverage: true,
   coverageDirectory: 'coverage',
