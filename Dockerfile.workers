@@ -31,7 +31,11 @@ COPY --from=builder /app/package.json ./
 
 USER worker
 
+# Ask the process something it can actually fail. The previous check exited 0
+# unconditionally, so a wedged worker still reported healthy and was never
+# restarted — worse than no healthcheck, because it looked like one.
+EXPOSE 4100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "process.exit(0)"
+  CMD node -e "const p=process.env.WORKER_HEALTH_PORT||4100;require('http').get('http://127.0.0.1:'+p+'/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 CMD ["node", "--require", "ts-node/register", "apps/workers/src/index.ts"]

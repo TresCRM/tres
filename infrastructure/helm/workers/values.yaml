@@ -16,6 +16,10 @@ service:
 ingress:
   enabled: false
 
+# Port the worker's /healthz and /readyz endpoints listen on. Must match
+# WORKER_HEALTH_PORT if that is overridden in the environment.
+healthPort: 4100
+
 resources:
   requests:
     cpu: 200m

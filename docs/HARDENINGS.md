@@ -116,8 +116,8 @@ Index (jump to module):
 
 ## 10. Workers — Background Jobs
 
-- [ ] **[P0]** `apps/workers/src/index.ts:21-40` — NATS subscription has no graceful shutdown. Add `SIGTERM`/`SIGINT` handler that unsubscribes and drains before exit.
-- [ ] **[P0]** `apps/workers/src/jobs/billing.ts:18` — `setInterval` billing job with no distributed lock. Two replicas will double-charge. Use Redis Redlock or Mongo TTL lock.
+- [x] **[P0]** `apps/workers/src/index.ts:21-40` — NATS subscription has no graceful shutdown. Add `SIGTERM`/`SIGINT` handler that unsubscribes and drains before exit. — **FIXED 2026-08-27: SIGTERM/SIGINT drain the NATS subscription and connection, clear the billing timer, close the health server and disconnect mongoose, with a 15s cap before forced exit. A failing ticket email no longer tears down the subscription loop either**
+- [x] **[P0]** `apps/workers/src/jobs/billing.ts:18` — `setInterval` billing job with no distributed lock. Two replicas will double-charge. Use Redis Redlock or Mongo TTL lock. — **FIXED 2026-08-27: the hourly sweep runs under a Mongo TTL lock (utils/distributedLock.ts), so only one replica sweeps. The same lock was applied to the API's billing cron, which had the identical exposure and is the one that actually renews subscriptions and raises invoices. Taken at the scheduler seam so direct runOnce() callers and tests are unaffected**
 - [ ] **[P1]** `apps/workers/src/index.ts:27-40` — Failed messages logged to console only. Add NATS JetStream durable consumer + DLQ subject.
 - [ ] **[P1]** `apps/workers/src/index.ts:27-40` — For-await loop wraps no try/catch around handler. Catch, log, ack/DLQ.
 - [ ] **[P1]** `apps/workers/src/jobs/billing.ts:38-41` — `sendReminderEmail` queries users by tenantId without verifying tenant. Add tenant existence check.
@@ -134,8 +134,8 @@ Index (jump to module):
 
 ## 12. Infrastructure — Helm, Terraform, Docker
 
-- [ ] **[P0]** `infrastructure/helm/workers/templates/deployment.yaml:33-58` — No `livenessProbe` / `readinessProbe`. Hung workers won't restart. Add HTTP probes once `/healthz` exists.
-- [ ] **[P0]** `Dockerfile.workers:33-34` — Healthcheck is `node -e "process.exit(0)"` (always passes). Point at real `/healthz`.
+- [x] **[P0]** `infrastructure/helm/workers/templates/deployment.yaml:33-58` — No `livenessProbe` / `readinessProbe`. Hung workers won't restart. Add HTTP probes once `/healthz` exists. — **FIXED 2026-08-27: liveness on /healthz and readiness on /readyz, against a new health port exposed by the worker**
+- [x] **[P0]** `Dockerfile.workers:33-34` — Healthcheck is `node -e "process.exit(0)"` (always passes). Point at real `/healthz`. — **FIXED 2026-08-27: the worker now serves /healthz and /readyz (it had no HTTP server, so there was nothing to point at) and the healthcheck queries it**
 - [ ] **[P1]** `Dockerfile.workers:36` — Runs `ts-node` in production. Pre-compile in a build stage; run compiled JS.
 - [ ] **[P1]** `infrastructure/helm/` — No `NetworkPolicy` manifests. Calico is enabled but everything can talk to everything. Add deny-all + explicit allow rules (workers→NATS+Mongo, API→Mongo+NATS+Redis).
 - [ ] **[P1]** `infrastructure/helm/api/values.yaml:79-82` — Service account created but no minimal RBAC. Add `Role`/`RoleBinding` restricting to own namespace.
@@ -146,7 +146,7 @@ Index (jump to module):
 
 ## 13. CI/CD & Root Tooling
 
-- [ ] **[P0]** `.github/workflows/security-audit.yml:43-44` — `pnpm audit --prod` uses `continue-on-error: true`; HIGH vulns don't block. Change to fail on HIGH+.
+- [x] **[P0]** `.github/workflows/security-audit.yml:43-44` — `pnpm audit --prod` uses `continue-on-error: true`; HIGH vulns don't block. Change to fail on HIGH+. — **FIXED 2026-08-27, but NOT as written: failing on any HIGH would mean a permanently red build, since there are ~50 high-severity advisories in production dependencies today. The gate now fails on any CRITICAL and on any INCREASE in HIGH above a committed ceiling (.github/audit-baseline.json), so new ones are blocked while the backlog is visible and ratchets down. Clearing the backlog is dependency-upgrade work — axios, swagger-ui-react, @opentelemetry/sdk-node — and is still outstanding**
 - [ ] **[P1]** Add GitHub CodeQL workflow for SAST (free, native).
 - [ ] **[P1]** `.github/workflows/ci.yml` — No coverage gate. Run Jest with `--coverage`, fail if branch coverage < threshold.
 - [ ] **[P1]** `.github/workflows/ci.yml:32` — Only `lint:web` runs. Add `pnpm lint` across all workspaces (API + workers + packages). Requires…

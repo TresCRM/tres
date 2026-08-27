@@ -51,6 +51,28 @@ spec:
               value: {{ $value | quote }}
             {{- end }}
           {{- end }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.healthPort | default 4100 }}
+              protocol: TCP
+          # Without probes a hung worker is never restarted and never taken out
+          # of service; it just stops doing work while reporting Running.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

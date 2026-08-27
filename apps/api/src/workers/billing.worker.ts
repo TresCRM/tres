@@ -9,6 +9,7 @@
  *  - Cron-scheduled (see startCron export)
  */
 import "dotenv/config";
+import { withLock } from "../utils/distributedLock";
 import { connectMongo, disconnectMongo } from "../db/mongoose";
 import { Subscription } from "../models/Subscription";
 import { User } from "../models/User";
@@ -39,6 +40,9 @@ function daysBetween(a: Date, b: Date) {
 }
 
 /** Exponential backoff delays in seconds: 1h, 4h, 24h, 72h */
+/** Longer than a sweep can plausibly take, shorter than the cron interval. */
+const BILLING_LOCK_TTL_MS = 30 * 60 * 1000;
+
 const RETRY_DELAYS = [3600, 14400, 86400, 259200];
 
 function getNextRetryDelay(failCount: number): number {
@@ -319,13 +323,28 @@ let cronInterval: ReturnType<typeof setInterval> | null = null;
  * Start the billing worker on a recurring schedule.
  * Default: every 6 hours.
  */
+/**
+ * One scheduled sweep, held under a fleet-wide lock.
+ *
+ * Every API replica starts this cron, and the sweep renews subscriptions and
+ * raises invoices — so without the lock, N replicas bill N times. The lock is
+ * taken here rather than inside runOnce() so that direct callers (the CLI entry
+ * point, tests) keep working unconditionally.
+ */
+async function runScheduledSweep() {
+  try {
+    const { ran } = await withLock("api:billing", BILLING_LOCK_TTL_MS, () => runOnce());
+    if (!ran) log.info("Billing sweep already running on another replica — skipped");
+  } catch (err: any) {
+    log.error({ err: err?.message }, "Billing run failed");
+  }
+}
+
 export function startCron(intervalMs = Number(process.env.BILLING_CRON_INTERVAL_MS || 6 * 3600000)) {
   if (cronInterval) return;
   log.info({ intervalMs }, "Starting billing cron");
-  runOnce().catch((err) => log.error({ err: err.message }, "Billing run failed"));
-  cronInterval = setInterval(() => {
-    runOnce().catch((err) => log.error({ err: err.message }, "Billing run failed"));
-  }, intervalMs);
+  void runScheduledSweep();
+  cronInterval = setInterval(() => void runScheduledSweep(), intervalMs);
   cronInterval.unref();
 }
 
