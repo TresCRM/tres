@@ -72,8 +72,8 @@ Index (jump to module):
 
 - [x] **[P0]** `apps/api/src/routes/public.widget.ts:29-50` — Domain allowlist uses `.endsWith('.' + hostname)`. `example.com.evil.com` will pass `.endsWith('.evil.com')`. Replace with exact hostname match (case-insensitive) or a strict subdomain rule. — **VERIFIED ALREADY DONE: exact hostname match or true subdomain; the described suffix bypass does not apply**
 - [x] **[P0]** `apps/api/src/routes/public.widget.ts:34,120-121` — If `allowedDomains` is empty, all origins are accepted. Fail closed. — **FIXED 2026-08-26: now fails closed — a token with no configured domains is rejected instead of accepting every origin**
-- [ ] **[P0]** `apps/api/src/routes/public.tickets.ts` — No rate limit on public ticket creation. Add IP + email compound throttle (10/hour/IP, 3/day/email).
-- [ ] **[P0]** `apps/api/src/routes/public.widget.ts` — No rate limit on widget endpoints. Add per-token throttle (5 tickets/hour, 1000 requests/hour).
+- [x] **[P0]** `apps/api/src/routes/public.tickets.ts` — No rate limit on public ticket creation. Add IP + email compound throttle (10/hour/IP, 3/day/email). — **FIXED 2026-08-27: publicTicketIpLimiter (10/hour/IP) and publicTicketEmailLimiter (3/day/email) on POST /public/tickets. The email key reads customerEmail (the field the public API actually sends) and falls back to the IP when absent, so one malformed caller cannot share a bucket with everyone**
+- [x] **[P0]** `apps/api/src/routes/public.widget.ts` — No rate limit on widget endpoints. Add per-token throttle (5 tickets/hour, 1000 requests/hour). — **FIXED 2026-08-27: widgetTicketLimiter (5 tickets/hour/token) on widget ticket creation and widgetTokenLimiter (1000 req/hour/token) at the widget mount**
 - [ ] **[P1]** `apps/api/src/routes/public.tickets.ts:138-142` — Customer token returned in HTTP response body AND email. Return via email only; response returns ticket ID + masked email.
 - [ ] **[P1]** `apps/api/src/routes/public.surveys.ts` — Rate limit survey responses (10/hour/IP per link).
 - [ ] **[P2]** `apps/api/src/routes/public.tickets.ts:557-590` — Log repeated portal-access requests as potential enumeration.

@@ -5,6 +5,7 @@
  * Mounted at /public/tickets
  */
 import { Router } from "express";
+import { publicTicketIpLimiter, publicTicketEmailLimiter } from "../middlewares/security";
 import { z } from "zod";
 import multer from "multer";
 import { Ticket } from "../models/Ticket";
@@ -117,7 +118,11 @@ registry.registerPath({
  * POST /public/tickets -- submit a new ticket as an end-customer.
  * Creates the ticket, sends a magic link email for tracking/replying.
  */
-publicTicketsRouter.post("/tickets", async (req, res) => {
+publicTicketsRouter.post(
+  "/tickets",
+  publicTicketIpLimiter,
+  publicTicketEmailLimiter,
+  async (req, res) => {
   try {
     const body = CreateTicketBody.parse(req.body);
 

@@ -22,7 +22,7 @@ import { mfaRouter } from "./mfa";
 import { oauthRouter } from "./oauth";
 import { gdprRouter } from "./gdpr";
 import { requireMfaForPrivileged } from "../middlewares/auth";
-import { authLimiter, strictLimiter } from "../middlewares/security";
+import { authLimiter, strictLimiter, widgetTokenLimiter } from "../middlewares/security";
 import { adminRouter } from "../admin/routes";
 import { invoicesRouter } from "./invoices";
 import { paystackWebhookRouter } from "./paystackWebhook";
@@ -156,5 +156,7 @@ export function mountRoutes(app: Express) {
   // Public routes — no auth required
   app.use("/public", strictLimiter, publicSurveysRouter);
   app.use("/public", strictLimiter, publicTicketsRouter);
-  app.use("/public", strictLimiter, publicWidgetRouter);
+  // Widget traffic is additionally budgeted per token, so one embed cannot
+  // exhaust the shared per-IP allowance for every other tenant behind a CDN.
+  app.use("/public", strictLimiter, widgetTokenLimiter, publicWidgetRouter);
 }
