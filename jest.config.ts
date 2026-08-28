@@ -3,7 +3,7 @@ import type { Config } from 'jest';
 const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/apps/api/src'],
+  roots: ['<rootDir>/apps/api/src', '<rootDir>/packages/widget/src'],
   testPathIgnorePatterns: ['/node_modules/'],
   moduleFileExtensions: ['ts', 'js'],
   setupFiles: ['dotenv/config'],
@@ -39,7 +39,10 @@ const config: Config = {
     // Note: utils/sla-assign.ts is real logic and stays in the denominator.
     "!apps/api/src/utils/seed.ts",
     "!apps/api/src/utils/seed-demo.ts",
-    "!apps/api/src/utils/seed-survey-template.ts"
+    "!apps/api/src/utils/seed-survey-template.ts",
+    // The embeddable widget runs on customer pages; keep it measured.
+    "packages/widget/src/**/*.ts",
+    "!packages/widget/src/**/*.test.ts"
   ],
   coveragePathIgnorePatterns: [
     "/node_modules/",

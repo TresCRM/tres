@@ -302,11 +302,11 @@ Index (jump to module):
 
 ### 20.1 Critical Bugs (P0)
 
-- [ ] **[P0]** **No submit handler.** `getPanelHTML` renders `<form … onsubmit="return false;">` and there is no `addEventListener('submit', …)` wiring the form to `apiBase`. The widget accepts input but never creates a ticket. Add an async submit handler that POSTs to `${apiBase}/public/widget/tickets` with tenant+token and shows success/error UI.
-- [ ] **[P0]** **`DEFAULT_API_BASE = "http://localhost:4000"`** ships in the built artifact. Any customer embedding this without `data-api-base` will silently target localhost. Replace with production default and make it a build-time replacement (`import.meta.env.WIDGET_API_BASE`) enforced in CI.
-- [ ] **[P0]** **Inline `onclick=` handler** at line 123 (`this.getRootNode().host.querySelector('.tres-fab').click()`). Inline handlers break CSP `script-src 'self'`. Replace with `addEventListener('click', …)` bound at mount.
-- [ ] **[P0]** No CSRF/nonce/replay protection on widget submissions. Since the token is public, at minimum: server-side rate-limit per token+IP; add optional invisible CAPTCHA (Turnstile) toggle in widget config.
-- [ ] **[P0]** No autoinit safety check — calling `init()` twice creates two widgets. Guard `mount` with `if (document.getElementById('tres-crm-widget')) return`.
+- [x] **[P0]** **No submit handler.** `getPanelHTML` renders `<form … onsubmit="return false;">` and there is no `addEventListener('submit', …)` wiring the form to `apiBase`. The widget accepts input but never creates a ticket. Add an async submit handler that POSTs to `${apiBase}/public/widget/tickets` with tenant+token and shows success/error UI. — **FIXED 2026-08-28: a real submit handler POSTs to /public/widget/tickets, shows the ticket reference on success, and surfaces failures (including a plain-language message for the 429 from the per-token budget) instead of failing silently**
+- [x] **[P0]** **`DEFAULT_API_BASE = "http://localhost:4000"`** ships in the built artifact. Any customer embedding this without `data-api-base` will silently target localhost. Replace with production default and make it a build-time replacement (`import.meta.env.WIDGET_API_BASE`) enforced in CI. — **FIXED 2026-08-28: defaults to the production API and is overridable at build time via a __TRES_API_BASE__ define, or per-embed via data-api-base**
+- [x] **[P0]** **Inline `onclick=` handler** at line 123 (`this.getRootNode().host.querySelector('.tres-fab').click()`). Inline handlers break CSP `script-src 'self'`. Replace with `addEventListener('click', …)` bound at mount. — **FIXED 2026-08-28: bound with addEventListener at mount. The form's onsubmit="return false;" is gone too — same CSP problem. A test asserts the rendered markup carries no on*= attributes at all**
+- [ ] **[P0]** No CSRF/nonce/replay protection on widget submissions. Since the token is public, at minimum: server-side rate-limit per token+IP; add optional invisible CAPTCHA (Turnstile) toggle in widget config. — **PARTIAL 2026-08-27/28: the server-side half is done — widgetTicketLimiter caps tickets at 5/hour per widget token and widgetTokenLimiter caps overall widget traffic at 1000/hour per token. Not done: keying the throttle on token+IP jointly, and the optional Turnstile toggle. Both remain open**
+- [x] **[P0]** No autoinit safety check — calling `init()` twice creates two widgets. Guard `mount` with `if (document.getElementById('tres-crm-widget')) return`. — **FIXED 2026-08-28: init() and mount() both bail if the host element already exists, so autoInit plus a manual init yields one widget. destroy() now also detaches the document keydown listener, which previously outlived the widget**
 
 ### 20.2 Security Hardening (P1)
 
@@ -352,7 +352,7 @@ Index (jump to module):
 
 ### 20.6 Testing (P0 — see Section 21 for Playwright details)
 
-- [ ] **[P0]** Unit tests for `escapeHtml`, autoInit, `init` idempotency, `destroy` cleanup.
+- [x] **[P0]** Unit tests for `escapeHtml`, autoInit, `init` idempotency, `destroy` cleanup. — **FIXED 2026-08-28: 50 tests covering escaping, colour validation, init idempotency, destroy cleanup, open/close and aria state, submit success/error/429/network paths, autoInit, and the absence of inline handlers. jest-environment-jsdom added; the widget package is now in the jest roots and the coverage denominator**
 - [ ] **[P0]** Playwright cross-browser E2E: Chromium, Firefox, WebKit (Safari) → submit form on a test host page.
 - [ ] **[P0]** Playwright test that the widget respects a strict `Content-Security-Policy: script-src 'self' <widget-origin>; style-src 'self' 'unsafe-inline'` on the host page.
 - [ ] **[P1]** Cross-origin test: host page on `example.com`, widget served from `widget.trescrm.com` — assert no CORS/cookie leaks.
