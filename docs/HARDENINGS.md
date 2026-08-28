@@ -353,8 +353,8 @@ Index (jump to module):
 ### 20.6 Testing (P0 — see Section 21 for Playwright details)
 
 - [x] **[P0]** Unit tests for `escapeHtml`, autoInit, `init` idempotency, `destroy` cleanup. — **FIXED 2026-08-28: 50 tests covering escaping, colour validation, init idempotency, destroy cleanup, open/close and aria state, submit success/error/429/network paths, autoInit, and the absence of inline handlers. jest-environment-jsdom added; the widget package is now in the jest roots and the coverage denominator**
-- [ ] **[P0]** Playwright cross-browser E2E: Chromium, Firefox, WebKit (Safari) → submit form on a test host page.
-- [ ] **[P0]** Playwright test that the widget respects a strict `Content-Security-Policy: script-src 'self' <widget-origin>; style-src 'self' 'unsafe-inline'` on the host page.
+- [x] **[P0]** Playwright cross-browser E2E: Chromium, Firefox, WebKit (Safari) → submit form on a test host page. — **FIXED 2026-08-29: Playwright harness added (playwright.config.ts, a self-serving host page, a token-keyed API stub). 15 specs run on all three engines — 45 runs, all green locally. The suite drives the BUILT bundle, not the source, and needs no database or API process**
+- [x] **[P0]** Playwright test that the widget respects a strict `Content-Security-Policy: script-src 'self' <widget-origin>; style-src 'self' 'unsafe-inline'` on the host page. — **FIXED 2026-08-29: the fixture serves /csp under `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'`. Four specs assert the widget mounts, the launcher and close control work, the form submits, and no violation or page error is raised — the regression that would otherwise reach customers as a dead button**
 - [ ] **[P1]** Cross-origin test: host page on `example.com`, widget served from `widget.trescrm.com` — assert no CORS/cookie leaks.
 - [ ] **[P1]** Shadow-DOM isolation test — host page global CSS must not affect widget styles.
 - [ ] **[P1]** Accessibility audit with `axe-playwright` inside the shadow root.

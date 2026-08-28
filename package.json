@@ -46,7 +46,9 @@
     "worker:billing": "pnpm exec ts-node -r dotenv/config apps/api/src/workers/billing.worker.ts",
     "worker:billing:fail": "cross-env BILLING_FORCE_FAIL=1 pnpm exec ts-node -r dotenv/config apps/api/src/workers/billing.worker.ts",
     "prebuild": "pnpm docs:gen",
-    "project:clean": "pnpm dlx rimraf node_modules && pnpm install --force"
+    "project:clean": "pnpm dlx rimraf node_modules && pnpm install --force",
+    "test:widget:e2e": "playwright test",
+    "build:widget": "pnpm --filter @tres-crm/widget build"
   },
   "keywords": [],
   "author": "",
@@ -58,6 +60,7 @@
   ],
   "devDependencies": {
     "@asteasolutions/zod-to-openapi": "^8.1.0",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/bcryptjs": "^3.0.0",
@@ -83,7 +86,6 @@
     "mongodb-memory-server": "^10.2.3",
     "nodemon": "^3.1.10",
     "openapi-typescript": "^7.9.1",
-    "playwright": "^1.56.0",
     "supertest": "^7.1.4",
     "swagger-ui-express": "^5.0.1",
     "ts-jest": "^29.4.4",
