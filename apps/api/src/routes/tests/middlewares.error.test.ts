@@ -193,23 +193,28 @@ describe("errorHandler — recorded context", () => {
 });
 
 describe("errorHandler — delegation", () => {
-  test("always calls next so the terminal handler can respond", async () => {
+  test("forwards the error so the terminal handler can respond", async () => {
     const next = jest.fn();
+    const err = new Error("boom");
 
-    await errorHandler(new Error("boom"), makeReq(), makeRes().res, next as NextFunction);
+    await errorHandler(err, makeReq(), makeRes().res, next as NextFunction);
 
-    expect(next).toHaveBeenCalled();
+    // next() without the error would tell Express the error is handled and to
+    // resume ordinary middleware — the JSON error handler after this one would
+    // never run, and the client would get Express's default HTML page.
+    expect(next).toHaveBeenCalledWith(err);
   });
 
-  test("still calls next when activity logging rejects", async () => {
+  test("still forwards the error when activity logging rejects", async () => {
     mockWriteActivity.mockRejectedValue(new Error("mongo is down"));
     const next = jest.fn();
+    const err = new Error("boom");
 
     await expect(
-      errorHandler(new Error("boom"), makeReq(), makeRes().res, next as NextFunction)
+      errorHandler(err, makeReq(), makeRes().res, next as NextFunction)
     ).resolves.toBeUndefined();
 
-    expect(next).toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(err);
   });
 
   test("does not send a response itself", async () => {

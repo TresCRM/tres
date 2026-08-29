@@ -9,6 +9,7 @@
  * would.
  */
 import { spawn } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +29,52 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * secret, which is what makes the challenge flow testable.
  */
 const STACK_FILE = path.resolve(__dirname, ".stack.json");
+const PAYSTACK_PORT = Number(process.env.E2E_PAYSTACK_PORT || 4401);
+
+/**
+ * Stand-in for api.paystack.co.
+ *
+ * The checkout flow is otherwise untestable: without a provider the API answers
+ * 503, and with one it calls the live service. The API points at this through
+ * PAYSTACK_BASE_URL.
+ */
+function startPaystackStub() {
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      const reply = (body) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+
+      if (req.url?.startsWith("/transaction/initialize")) {
+        return reply({
+          status: true,
+          data: {
+            reference: "e2e_ref_1",
+            authorization_url: "https://checkout.paystack.test/e2e_ref_1",
+            access_code: "e2e_access_1",
+          },
+        });
+      }
+      if (req.url?.startsWith("/transaction/verify/")) {
+        const reference = decodeURIComponent(req.url.split("/transaction/verify/")[1] || "");
+        return reply({
+          status: true,
+          data: { status: "success", reference, amount: 1990000 },
+        });
+      }
+      reply({ status: false, message: "unstubbed paystack endpoint" });
+    });
+  });
+  server.listen(PAYSTACK_PORT, () =>
+    console.log(`[e2e-api] paystack stub on :${PAYSTACK_PORT}`)
+  );
+  return server;
+}
+
+const paystack = startPaystackStub();
 
 const mongod = await MongoMemoryServer.create({
   binary: { version: process.env.MONGOMS_VERSION || "7.0.14" },
@@ -61,6 +108,9 @@ const api = spawn(
       DISABLE_RATE_LIMIT: "1",
       EVENTS_URL: "",
       ALLOWED_ORIGINS: `${WEB_ORIGIN},http://localhost:3100`,
+      // Points the provider at the stub above rather than the live service.
+      PAYSTACK_SECRET_KEY: "sk_test_e2e_stubbed_key",
+      PAYSTACK_BASE_URL: `http://127.0.0.1:${PAYSTACK_PORT}`,
     },
     stdio: ["ignore", "inherit", "inherit"],
     shell: process.platform === "win32",
@@ -69,6 +119,7 @@ const api = spawn(
 
 async function shutdown() {
   api.kill();
+  paystack.close();
   fs.rmSync(STACK_FILE, { force: true });
   await mongod.stop().catch(() => {});
   process.exit(0);

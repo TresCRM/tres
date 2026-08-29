@@ -87,7 +87,13 @@ function mapPaystackStatus(status: string): SubscriptionStatus {
 
 class PaystackProvider implements PaymentProvider {
   private secretKey: string;
-  private baseUrl = "https://api.paystack.co";
+  /**
+   * Paystack's API root. Overridable so the checkout flow can be pointed at a
+   * stub in end-to-end tests and sandbox environments — otherwise the only way
+   * to exercise it is against the live service. Unset everywhere else, which
+   * keeps production on the real endpoint.
+   */
+  private baseUrl = process.env.PAYSTACK_BASE_URL || "https://api.paystack.co";
 
   constructor(secretKey: string) {
     this.secretKey = secretKey;
