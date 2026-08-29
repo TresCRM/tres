@@ -31,6 +31,7 @@ import {
   publicTicketIpLimiter,
   publicTicketEmailLimiter,
   widgetTicketLimiter,
+  widgetTicketTokenLimiter,
   widgetTokenLimiter,
 } from "../../middlewares/security";
 
@@ -181,14 +182,14 @@ describe("publicTicketEmailLimiter — 3 tickets per day per address", () => {
   });
 });
 
-describe("widgetTicketLimiter — 5 tickets per hour per token", () => {
+describe("widgetTicketLimiter — 5 tickets per hour per visitor of a widget", () => {
   const limited = appWith(widgetTicketLimiter);
 
   test("allows the budget then rejects", async () => {
     const widgetToken = `pub_a_${++seq}`;
 
     const codes = await fire(7, () =>
-      request(limited).post("/t").send({ widgetToken })
+      request(limited).post("/t").set("X-Forwarded-For", "203.0.113.77").send({ widgetToken })
     );
 
     expect(codes.slice(0, 5).every((c) => c === 201)).toBe(true);
@@ -199,10 +200,59 @@ describe("widgetTicketLimiter — 5 tickets per hour per token", () => {
     const noisy = `pub_b_${++seq}`;
     const quiet = `pub_c_${++seq}`;
 
-    await fire(7, () => request(limited).post("/t").send({ widgetToken: noisy }));
-    const res = await request(limited).post("/t").send({ widgetToken: quiet });
+    await fire(7, () =>
+      request(limited).post("/t").set("X-Forwarded-For", "203.0.113.78").send({ widgetToken: noisy })
+    );
+    const res = await request(limited)
+      .post("/t")
+      .set("X-Forwarded-For", "203.0.113.78")
+      .send({ widgetToken: quiet });
 
     expect(res.status).toBe(201);
+  });
+
+  test("one abusive visitor does not lock the widget for everyone else", async () => {
+    // A token-only budget would be a denial of service against the tenant:
+    // one visitor spends the hour's allowance and every genuine customer on
+    // that site is refused.
+    const widgetToken = `pub_shared_${++seq}`;
+
+    await fire(7, () =>
+      request(limited).post("/t").set("X-Forwarded-For", "198.51.100.13").send({ widgetToken })
+    );
+    const innocent = await request(limited)
+      .post("/t")
+      .set("X-Forwarded-For", "198.51.100.14")
+      .send({ widgetToken });
+
+    expect(innocent.status).toBe(201);
+  });
+});
+
+describe("widgetTicketTokenLimiter — aggregate ceiling per widget token", () => {
+  const limited = appWith(widgetTicketTokenLimiter);
+
+  test("bounds the total no matter how many addresses are used", async () => {
+    // This is the limit that survives address rotation, which the per-visitor
+    // budget alone does not.
+    const widgetToken = `pub_agg_${++seq}`;
+
+    const codes = await fire(62, (i) =>
+      request(limited)
+        .post("/t")
+        .set("X-Forwarded-For", `198.51.100.${(i % 200) + 1}`)
+        .send({ widgetToken })
+    );
+
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThan(0);
+  });
+
+  test("ordinary volume is unaffected", async () => {
+    const widgetToken = `pub_agg_ok_${++seq}`;
+
+    const codes = await fire(10, () => request(limited).post("/t").send({ widgetToken }));
+
+    expect(codes.every((c) => c === 201)).toBe(true);
   });
 });
 

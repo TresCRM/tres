@@ -5,7 +5,7 @@
  * Domain validation via Origin/Referer header.
  */
 import { Router } from "express";
-import { widgetTicketLimiter } from "../middlewares/security";
+import { widgetTicketLimiter, widgetTicketTokenLimiter } from "../middlewares/security";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import { WidgetToken } from "../models/WidgetToken";
@@ -147,6 +147,7 @@ publicWidgetRouter.get("/widget/config", async (req, res) => {
 // POST create ticket from widget
 publicWidgetRouter.post(
   "/widget/tickets",
+  widgetTicketTokenLimiter,
   widgetTicketLimiter,
   async (req, res) => {
   try {

@@ -156,14 +156,44 @@ export const widgetTokenLimiter = rateLimit({
   store: createStore("widget_token", HOUR_MS),
 });
 
-/** Ticket creation budget for one widget token. */
+/**
+ * Ticket creation budget for one visitor of one widget.
+ *
+ * Keyed on token *and* address rather than token alone. A token-only budget is
+ * a denial of service against the tenant: one abusive visitor spends the whole
+ * hourly allowance and every genuine customer on that site is refused. Pairing
+ * it with the address confines the damage to the abuser.
+ *
+ * That alone would let a distributed submitter buy 5 more per address, so it is
+ * deliberately used together with widgetTicketTokenLimiter below, which caps
+ * the total regardless of how many addresses are involved.
+ */
 export const widgetTicketLimiter = rateLimit({
   windowMs: HOUR_MS,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
   skip,
-  keyGenerator: widgetTokenKey,
+  keyGenerator: (req: Request) =>
+    `${widgetTokenKey(req)}|${ipKeyGenerator(req.ip || "unknown")}`,
   message: { error: "rate_limited", message: "Too many tickets from this widget. Try again later." },
-  store: createStore("widget_ticket", HOUR_MS),
+  store: createStore("widget_ticket_ip", HOUR_MS),
+});
+
+/**
+ * Aggregate ticket ceiling for one widget token, across every address.
+ *
+ * This is the bound that survives address rotation. It is set well above what
+ * a single site would legitimately produce in an hour, so it does not
+ * interfere with normal traffic — it exists to stop a distributed flood.
+ */
+export const widgetTicketTokenLimiter = rateLimit({
+  windowMs: HOUR_MS,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip,
+  keyGenerator: widgetTokenKey,
+  message: { error: "rate_limited", message: "This widget has reached its hourly ticket limit." },
+  store: createStore("widget_ticket_token", HOUR_MS),
 });
