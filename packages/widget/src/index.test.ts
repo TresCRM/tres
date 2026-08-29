@@ -9,9 +9,8 @@
  * under a normal script-src policy), no second widget on double init, no
  * listeners left behind after destroy, and a form that actually submits.
  */
-import { init, open, close, destroy, autoInit, __internals } from "./index";
-
-const { escapeHtml, safeColor, defaultApiBase, trimSlash } = __internals;
+import { init, open, close, destroy, autoInit } from "./index";
+import { escapeHtml, safeColor, defaultApiBase, trimSlash } from "./internals";
 
 const CONFIG = { tenant: "acme", token: "pub_test_123", apiBase: "https://api.example.test" };
 

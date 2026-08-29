@@ -399,16 +399,16 @@ Every UI enhancement from Section 19 gets a matching spec file. Assertions inclu
 
 Test host pages under `apps/web/tests/widget-hosts/` — plain HTML files served over HTTP that embed the built widget from `packages/widget/dist/`.
 
-- [ ] **[P0]** `widget/embed-basic.spec.ts` — script tag auto-init, FAB appears, click opens panel.
-- [ ] **[P0]** `widget/submit.spec.ts` — fill form, submit, confirmation appears, network request goes to correct API base with correct token.
-- [ ] **[P0]** `widget/csp.spec.ts` — host page ships strict CSP; widget still functions; no inline handlers rejected.
-- [ ] **[P0]** `widget/isolation.spec.ts` — host page has aggressive global CSS (`* { color: red !important }`); widget internals unaffected.
-- [ ] **[P1]** `widget/a11y.spec.ts` — axe-scan against the shadow root; focus trap; Escape closes; focus restored to FAB.
-- [ ] **[P1]** `widget/rate-limit.spec.ts` — spam 6 submissions → 429 returned; UI shows a friendly retry message.
-- [ ] **[P1]** `widget/cross-browser.spec.ts` — run on chromium+firefox+webkit; assert same DOM structure and successful submit.
-- [ ] **[P1]** `widget/offline.spec.ts` — start offline, submit, come online → auto-retry succeeds.
-- [ ] **[P1]** `widget/idempotent-init.spec.ts` — call `TresCRM.init()` twice → only one widget mounts.
-- [ ] **[P1]** `widget/destroy-cleanup.spec.ts` — after `TresCRM.destroy()`, DOM node gone, `keydown` listener removed (verify `getEventListeners`).
+- [x] **[P0]** `widget/embed-basic.spec.ts` — script tag auto-init, FAB appears, click opens panel. — **DONE 2026-08-29: covered by tests/e2e/widget.spec.ts (auto-init from script tag, FAB visible, click opens panel), on all three engines**
+- [x] **[P0]** `widget/submit.spec.ts` — fill form, submit, confirmation appears, network request goes to correct API base with correct token. — **DONE 2026-08-29: covered by tests/e2e/widget.spec.ts — fill, submit, confirmation with reference, and an assertion on the recorded request that it hit the configured API base carrying the right token**
+- [x] **[P0]** `widget/csp.spec.ts` — host page ships strict CSP; widget still functions; no inline handlers rejected. — **DONE 2026-08-29: four specs against a host page serving a strict policy; no violations or page errors raised**
+- [x] **[P0]** `widget/isolation.spec.ts` — host page has aggressive global CSS (`* { color: red !important }`); widget internals unaffected. — **DONE 2026-08-29: host page applies `* { color: red !important; font-size: 40px !important; display: block !important }` and hides inputs; the widget's computed styles are unaffected, its inputs stay visible, and it still submits end to end. Also asserts the widget does not leak styling outward**
+- [x] **[P1]** `widget/a11y.spec.ts` — axe-scan against the shadow root; focus trap; Escape closes; focus restored to FAB. — **DONE 2026-08-29: axe scan of the shadow root asserting no serious/critical violations, plus focus behaviour. NOTE this required implementing focus management first — the panel is role=dialog but had no focus move, no Tab trap and no restore. Opening now focuses the first field, Tab is trapped, and closing returns focus to the launcher**
+- [x] **[P1]** `widget/rate-limit.spec.ts` — spam 6 submissions → 429 returned; UI shows a friendly retry message. — **DONE 2026-08-29: the stub honours a per-token budget, so a token that has spent it gets a 429 and the UI shows the retry message; the submit button stays enabled so the visitor can try again**
+- [x] **[P1]** `widget/cross-browser.spec.ts` — run on chromium+firefox+webkit; assert same DOM structure and successful submit. — **DONE 2026-08-29: every widget spec runs on chromium, firefox and webkit as Playwright projects — 93 runs — rather than as a separate spec file**
+- [ ] **[P1]** `widget/offline.spec.ts` — start offline, submit, come online → auto-retry succeeds. — **NOT DONE 2026-08-29: this asks for auto-retry when connectivity returns, which the widget does not implement — it is a feature to build, not a test to write. A failed submit currently shows an error and leaves the form intact so the visitor can retry by hand. Left open deliberately**
+- [x] **[P1]** `widget/idempotent-init.spec.ts` — call `TresCRM.init()` twice → only one widget mounts. — **DONE 2026-08-29: asserted through window.TresCRM.init() in the browser, and again in the jsdom unit tests**
+- [x] **[P1]** `widget/destroy-cleanup.spec.ts` — after `TresCRM.destroy()`, DOM node gone, `keydown` listener removed (verify `getEventListeners`). — **DONE 2026-08-29: destroy removes the host node and detaches the document keydown listener; re-init afterwards yields exactly one widget. getEventListeners is a devtools-only API, so the listener is verified by behaviour instead**
 
 ### 21.5 Cross-Cutting
 

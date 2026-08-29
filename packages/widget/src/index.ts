@@ -20,6 +20,8 @@
  *    reaches here from the host page's script tag and from tenant settings.
  */
 
+import { defaultApiBase, trimSlash, escapeHtml, safeColor } from "./internals";
+
 export interface WidgetConfig {
   tenant: string;
   token: string;
@@ -45,27 +47,6 @@ const state: WidgetState = {
 };
 
 const HOST_ID = "tres-crm-widget";
-
-/** Replaced at build time; see defaultApiBase(). */
-declare const __TRES_API_BASE__: string | undefined;
-
-/**
- * Where the widget talks to when the host does not say.
- *
- * This previously defaulted to http://localhost:4000, which shipped in the
- * built artifact — every embed without an explicit data-api-base pointed at the
- * visitor's own machine and silently failed.
- */
-function defaultApiBase(): string {
-  try {
-    if (typeof __TRES_API_BASE__ !== "undefined" && __TRES_API_BASE__) {
-      return __TRES_API_BASE__;
-    }
-  } catch {
-    // Not defined by the bundler — fall through to the shipped default.
-  }
-  return "https://api.trescrm.com";
-}
 
 /**
  * Initialize the widget. Calling twice is a no-op rather than a second widget:
@@ -129,6 +110,7 @@ function mount(): void {
   panel
     .querySelector(".tres-form")
     ?.addEventListener("submit", (e) => void handleSubmit(e as SubmitEvent));
+  panel.addEventListener("keydown", (e) => trapTab(e as KeyboardEvent));
 
   // Keyboard: Escape to close
   state.keydownHandler = (e: KeyboardEvent) => {
@@ -211,20 +193,83 @@ function showConfirmation(ticketId?: string): void {
   if (confirmation) confirmation.style.display = "block";
 }
 
-function trimSlash(url: string): string {
-  return url.replace(/\/+$/, "");
+/**
+ * Focusable controls inside the panel, in tab order.
+ *
+ * Elements inside a hidden subtree are excluded: after a successful submit the
+ * form is display:none, and tabbing into invisible fields is disorienting for
+ * anyone using a keyboard or a screen reader.
+ */
+function focusableInPanel(): HTMLElement[] {
+  const panel = state.root?.querySelector(".tres-panel");
+  if (!panel) return [];
+
+  const candidates = Array.from(
+    panel.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+  );
+
+  return candidates.filter((el) => {
+    if (el.hasAttribute("disabled")) return false;
+    for (let n: HTMLElement | null = el; n && n !== panel; n = n.parentElement) {
+      if (n.style?.display === "none") return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Keep Tab inside the panel while it is open.
+ *
+ * The panel is a role="dialog", so focus escaping it puts the user somewhere on
+ * the host page with a dialog still showing and no obvious way back.
+ */
+function trapTab(e: KeyboardEvent): void {
+  if (e.key !== "Tab" || !state.isOpen) return;
+
+  const items = focusableInPanel();
+  if (items.length === 0) return;
+
+  const first = items[0];
+  const last = items[items.length - 1];
+  // Inside a shadow root the focused node is reported by the root, not document.
+  const active = (state.root?.activeElement ?? null) as HTMLElement | null;
+
+  if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
 }
 
 function toggle(): void {
   state.isOpen = !state.isOpen;
   const panel = state.root?.querySelector(".tres-panel");
-  const fab = state.root?.querySelector(".tres-fab");
+  const fab = state.root?.querySelector<HTMLElement>(".tres-fab");
   if (panel) {
     panel.classList.toggle("open", state.isOpen);
     panel.setAttribute("aria-hidden", String(!state.isOpen));
   }
   if (fab) {
     fab.setAttribute("aria-expanded", String(state.isOpen));
+  }
+
+  if (state.isOpen) {
+    // Move focus into the dialog so keyboard users land inside it. Prefer the
+    // first form control over the close button, which is first in DOM order —
+    // landing on "close" invites dismissing the thing you just opened.
+    const items = focusableInPanel();
+    const firstField = items.find(
+      (el) => el.tagName === "INPUT" || el.tagName === "TEXTAREA"
+    );
+    (firstField ?? items[0])?.focus();
+  } else {
+    // Return focus to the control that opened it, rather than dropping the
+    // user at the top of the host page.
+    fab?.focus();
   }
 }
 
@@ -274,34 +319,6 @@ function getPanelHTML(config: WidgetConfig): string {
   `;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    // Single quotes matter as soon as a value lands in a single-quoted
-    // attribute, which is easy to introduce later and hard to notice.
-    .replace(/'/g, "&#39;");
-}
-
-/**
- * Accept only a literal colour.
- *
- * The accent is interpolated straight into a stylesheet, so an unvalidated
- * value can close the declaration and append rules of its own — enough to
- * restyle or hide parts of the host page.
- */
-function safeColor(value: string | undefined, fallback: string): string {
-  if (!value) return fallback;
-  const v = value.trim();
-  const ok =
-    /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ||
-    /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/i.test(v) ||
-    /^[a-z]{3,20}$/i.test(v); // named colours
-  return ok ? v : fallback;
-}
-
 function getStyles(config: WidgetConfig): string {
   const accent = safeColor(config.accentColor, "#4F46E5");
   const pos = config.position === "bottom-left" ? "left: 20px;" : "right: 20px;";
@@ -337,9 +354,6 @@ function getStyles(config: WidgetConfig): string {
     }
   `;
 }
-
-/** Exported for tests; not part of the public embed surface. */
-export const __internals = { escapeHtml, safeColor, defaultApiBase, trimSlash };
 
 // Auto-init from script tag attributes
 export function autoInit(): void {

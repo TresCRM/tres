@@ -13,12 +13,14 @@
  * Routes:
  *   /?token=X                        host page embedding the widget as token X
  *   /csp?token=X                     same page under a strict policy
+ *   /hostile-css?token=X             same page under aggressive global CSS
  *   /tres-widget.js                  the built bundle
  *   POST /api/public/widget/tickets  stubbed ticket creation
  *   /__requests?token=X              payloads received for that token
  *
- * A token of the form pub_e2e_fail_<code> makes the stub answer with <code>,
- * so a test picks its own failure mode by choosing its token.
+ * A token of the form pub_e2e_fail_<code> makes the stub answer with <code>, and
+ * pub_e2e_budget_<n> succeeds n times then answers 429 — so a test picks its own
+ * server behaviour by choosing its token.
  */
 import http from "node:http";
 import fs from "node:fs";
@@ -46,12 +48,39 @@ const CSP = [
 /** token -> payloads received. Append-only; never read across tokens. */
 const received = new Map();
 
-function statusForToken(token) {
-  const m = /^pub_e2e_fail_(\d{3})$/.exec(token || "");
-  return m ? Number(m[1]) : 201;
+function statusForToken(token, priorCount) {
+  const fail = /^pub_e2e_fail_(\d{3})$/.exec(token || "");
+  if (fail) return Number(fail[1]);
+
+  // pub_e2e_budget_<n>: succeed n times, then answer 429 like the real
+  // per-token ticket budget does.
+  // A trailing suffix keeps the token unique per test run: the three browser
+  // projects share this server, so a fixed token would have one project spend
+  // the budget and the others start already throttled.
+  const budget = /^pub_e2e_budget_(\d+)(?:_.*)?$/.exec(token || "");
+  if (budget) return priorCount < Number(budget[1]) ? 201 : 429;
+
+  return 201;
 }
 
-function hostPage(token) {
+/**
+ * Styles a hostile (or merely careless) host page might apply globally.
+ * Everything here is !important and targets the universal selector, which is
+ * what shadow DOM is supposed to keep out.
+ */
+const AGGRESSIVE_CSS = `
+  * {
+    color: red !important;
+    font-size: 40px !important;
+    background: magenta !important;
+    border-radius: 0 !important;
+    display: block !important;
+  }
+  button { width: 500px !important; height: 500px !important; }
+  input, textarea { display: none !important; }
+`;
+
+function hostPage(token, opts = {}) {
   const safeToken = String(token).replace(/[^a-zA-Z0-9_-]/g, "");
   return `<!doctype html>
 <html lang="en">
@@ -60,6 +89,7 @@ function hostPage(token) {
     <title>Widget host page</title>
   </head>
   <body>
+    ${opts.aggressiveCss ? `<style>${AGGRESSIVE_CSS}</style>` : ""}
     <h1>Host page</h1>
     <script
       src="/tres-widget.js"
@@ -93,7 +123,8 @@ const server = http.createServer((req, res) => {
       if (!received.has(token)) received.set(token, []);
       received.get(token).push(payload);
 
-      const status = statusForToken(token);
+      // Count before this request, so a budget of n allows exactly n.
+      const status = statusForToken(token, received.get(token).length - 1);
       if (status !== 201) {
         return send(res, status, JSON.stringify({ error: "stubbed" }), {
           "Content-Type": "application/json",
@@ -125,11 +156,16 @@ const server = http.createServer((req, res) => {
     });
   }
 
-  if (url.pathname === "/" || url.pathname === "/csp") {
+  if (url.pathname === "/" || url.pathname === "/csp" || url.pathname === "/hostile-css") {
     const token = url.searchParams.get("token") || "pub_e2e_token";
     const headers = { "Content-Type": "text/html; charset=utf-8" };
     if (url.pathname === "/csp") headers["Content-Security-Policy"] = CSP;
-    return send(res, 200, hostPage(token), headers);
+    return send(
+      res,
+      200,
+      hostPage(token, { aggressiveCss: url.pathname === "/hostile-css" }),
+      headers
+    );
   }
 
   send(res, 404, "not found");
