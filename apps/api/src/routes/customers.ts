@@ -23,12 +23,24 @@ export const customersRouter = Router();
 
 /* ---------- Zod schemas ---------- */
 
+/**
+ * Tags are user-supplied and land in an indexed array, so they are bounded on
+ * both count and length, normalised to lowercase and deduped. Without that,
+ * "VIP", "vip" and " vip " are three different tags and filtering silently
+ * misses records.
+ */
+const TagList = z
+  .array(z.string().trim().min(1).max(40))
+  .max(20)
+  .transform((tags) => Array.from(new Set(tags.map((t) => t.trim().toLowerCase()))));
+
 const CreateCustomerBody = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email(),
   phone: z.string().max(30).optional(),
   company: z.string().max(200).optional(),
   notes: z.string().max(5000).optional(),
+  tags: TagList.optional(),
 });
 
 const UpdateCustomerBody = z.object({
@@ -36,12 +48,15 @@ const UpdateCustomerBody = z.object({
   phone: z.string().max(30).optional(),
   company: z.string().max(200).optional(),
   notes: z.string().max(5000).optional(),
+  tags: TagList.optional(),
 });
 
 const ListQuery = z.object({
   limit: z.coerce.number().min(1).max(200).default(50),
   cursor: z.string().optional(),
   q: z.string().optional(),
+  /** Filter to customers carrying this tag. Comparison is on the normalised form. */
+  tag: z.string().trim().min(1).max(40).optional(),
 });
 
 /* ---------- OpenAPI ---------- */
@@ -101,12 +116,17 @@ customersRouter.post("/", requireAuth, requirePermission("CUSTOMER_CREATE"), asy
     const existing = await Customer.findOne({ tenantId: asObjectId(auth.tid), email: body.email.toLowerCase() });
     if (existing) return res.status(409).json({ error: "customer_exists", message: "A customer with this email already exists" });
 
+    // Every accepted field is persisted. tags and notes were previously
+    // validated and then dropped on the floor here, so a create that supplied
+    // them succeeded and silently lost them.
     const customer = await Customer.create({
       tenantId: asObjectId(auth.tid),
       name: body.name,
       email: body.email.toLowerCase(),
       phone: body.phone,
       company: body.company,
+      notes: body.notes,
+      tags: body.tags ?? [],
     });
     return res.status(201).json({ data: customer });
   } catch (e: any) {
@@ -121,12 +141,16 @@ customersRouter.get("/", requireAuth, requirePermission("CUSTOMER_READ"), async 
   const q = ListQuery.parse(req.query);
   const filter: any = { tenantId: asObjectId(auth.tid) };
 
+  if (q.tag) filter.tags = q.tag.toLowerCase();
   if (q.q) {
     const safeQ = escapeRegex(q.q);
     filter.$or = [
       { name: { $regex: safeQ, $options: "i" } },
       { email: { $regex: safeQ, $options: "i" } },
       { company: { $regex: safeQ, $options: "i" } },
+      // Exact match on the normalised tag, not a regex: a tag is a label, and
+      // substring-matching them would make "vip" match "vip-churn-risk".
+      { tags: q.q.trim().toLowerCase() },
     ];
   }
   if (q.cursor) filter._id = { $lt: asObjectId(q.cursor) };

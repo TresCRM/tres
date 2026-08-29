@@ -30,6 +30,15 @@ export interface TicketDoc {
   statusHistory: StatusHistoryEntry[];
   closedBy?: string;       // userId or 'system' (for TTL auto-close)
   closeReason?: string;    // 'manual' | 'merged' | 'ttl_auto_close'
+  /**
+   * Soft delete. Tickets carry comments, attachments, links and an audit
+   * trail, so removal is reversible and auditable rather than destructive:
+   * the row is retained and excluded from reads. Irreversible erasure belongs
+   * to the GDPR purge path, not to a day-to-day delete button.
+   */
+  deletedAt?: Date;
+  deletedBy?: Types.ObjectId;
+  deleteReason?: string;
   mergedInto?: Types.ObjectId;
   isSandbox?: boolean;
   // AI triage (populated by AI service)
@@ -104,6 +113,9 @@ const TicketSchema = new Schema<TicketDoc>({
   statusHistory: { type: [StatusHistorySchema], default: [] },
   closedBy: String,
   closeReason: String,
+  deletedAt: { type: Date, default: null, index: true },
+  deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  deleteReason: String,
   mergedInto: { type: Schema.Types.ObjectId, ref: "Ticket" },
   isSandbox: { type: Boolean, default: false, index: true },
   // AI Triage

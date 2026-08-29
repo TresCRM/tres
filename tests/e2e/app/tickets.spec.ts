@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { seedTenant, cleanupTenant, closeDb, type SeededTenant } from "./fixtures/stack";
 import { apiContext, apiSignIn } from "./fixtures/auth";
+import { Ticket } from "../../../apps/api/src/models/Ticket";
 
 /**
  * Ticket lifecycle end-to-end — HARDENINGS.md section 21.
@@ -406,6 +407,175 @@ test.describe("tenant isolation", () => {
       });
 
       expect(res.status()).toBe(404);
+    } finally {
+      await mine.dispose();
+      await theirs.dispose();
+      await cleanupTenant(other.tenantId);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Deletion — admin rights only                                       */
+/* ------------------------------------------------------------------ */
+
+test.describe("deleting tickets", () => {
+  test("an owner deletes a ticket", async () => {
+    const owner = await asRole("OWNER");
+    try {
+      const ticket = await createTicket(owner.api, owner.auth, { subject: "Delete me owner" });
+
+      const res = await owner.api.delete(`/api/v1/tickets/${ticket._id}`, {
+        headers: owner.auth,
+        data: { reason: "duplicate of another report" },
+      });
+
+      expect(res.ok()).toBe(true);
+    } finally {
+      await owner.dispose();
+    }
+  });
+
+  test("an admin deletes a ticket", async () => {
+    const admin = await asRole("ADMIN");
+    try {
+      const ticket = await createTicket(admin.api, admin.auth, { subject: "Delete me admin" });
+
+      const res = await admin.api.delete(`/api/v1/tickets/${ticket._id}`, {
+        headers: admin.auth,
+      });
+
+      expect(res.ok()).toBe(true);
+    } finally {
+      await admin.dispose();
+    }
+  });
+
+  test("an agent cannot delete a ticket", async () => {
+    // Agents hold every other ticket verb — create, update, close, reopen,
+    // assign — but not removal.
+    const agent = await asRole("AGENT");
+    try {
+      const ticket = await createTicket(agent.api, agent.auth, { subject: "Agent cannot delete" });
+
+      const res = await agent.api.delete(`/api/v1/tickets/${ticket._id}`, {
+        headers: agent.auth,
+      });
+
+      expect(res.status()).toBe(403);
+    } finally {
+      await agent.dispose();
+    }
+  });
+
+  test("a read-only user cannot delete a ticket", async () => {
+    const author = await asRole("AGENT");
+    const reader = await asRole("READONLY");
+    try {
+      const ticket = await createTicket(author.api, author.auth, { subject: "Readonly cannot delete" });
+
+      const res = await reader.api.delete(`/api/v1/tickets/${ticket._id}`, {
+        headers: reader.auth,
+      });
+
+      expect(res.status()).toBe(403);
+    } finally {
+      await author.dispose();
+      await reader.dispose();
+    }
+  });
+
+  test("an anonymous caller cannot delete a ticket", async () => {
+    const author = await asRole("AGENT");
+    const anon = await apiContext();
+    try {
+      const ticket = await createTicket(author.api, author.auth, { subject: "Anon cannot delete" });
+
+      const res = await anon.delete(`/api/v1/tickets/${ticket._id}`);
+
+      expect([401, 403]).toContain(res.status());
+    } finally {
+      await author.dispose();
+      await anon.dispose();
+    }
+  });
+
+  test("a deleted ticket disappears from reads", async () => {
+    const owner = await asRole("OWNER");
+    try {
+      const ticket = await createTicket(owner.api, owner.auth, { subject: "Gone from reads" });
+      await owner.api.delete(`/api/v1/tickets/${ticket._id}`, { headers: owner.auth });
+
+      const byId = await owner.api.get(`/api/v1/tickets/${ticket._id}`, { headers: owner.auth });
+      const list = await owner.api.get("/api/v1/tickets", { headers: owner.auth });
+
+      expect(byId.status()).toBe(404);
+      expect((await list.json()).data.map((t: any) => t._id)).not.toContain(ticket._id);
+    } finally {
+      await owner.dispose();
+    }
+  });
+
+  test("the record is retained rather than destroyed", async () => {
+    // Support records are evidence. The delete is soft: the row stays, stamped
+    // with who removed it and why, and is simply excluded from reads.
+    const owner = await asRole("OWNER");
+    try {
+      const ticket = await createTicket(owner.api, owner.auth, { subject: "Retained after delete" });
+      await owner.api.delete(`/api/v1/tickets/${ticket._id}`, {
+        headers: owner.auth,
+        data: { reason: "raised in error" },
+      });
+
+      const raw = await Ticket.findById(ticket._id).lean();
+
+      expect(raw).toBeTruthy();
+      expect(raw!.deletedAt).toBeTruthy();
+      expect(raw!.deletedBy).toBeTruthy();
+      expect(raw!.deleteReason).toBe("raised in error");
+    } finally {
+      await owner.dispose();
+    }
+  });
+
+  test("deleting twice is a 404, not a second delete", async () => {
+    const owner = await asRole("OWNER");
+    try {
+      const ticket = await createTicket(owner.api, owner.auth, { subject: "Delete twice" });
+      await owner.api.delete(`/api/v1/tickets/${ticket._id}`, { headers: owner.auth });
+
+      const again = await owner.api.delete(`/api/v1/tickets/${ticket._id}`, {
+        headers: owner.auth,
+      });
+
+      expect(again.status()).toBe(404);
+    } finally {
+      await owner.dispose();
+    }
+  });
+
+  test("another tenant's ticket cannot be deleted", async () => {
+    const other = await seedTenant();
+    const mine = await asRole("OWNER");
+    const theirs = await apiContext();
+
+    try {
+      const theirSession = await apiSignIn(theirs, other, "AGENT");
+      const theirAuth = theirSession.accessToken
+        ? { Authorization: `Bearer ${theirSession.accessToken}` }
+        : {};
+      const theirTicket = await createTicket(theirs, theirAuth, { subject: "Not yours to delete" });
+
+      const res = await mine.api.delete(`/api/v1/tickets/${theirTicket._id}`, {
+        headers: mine.auth,
+      });
+
+      expect(res.status()).toBe(404);
+      // And it is untouched for its owner.
+      const stillThere = await theirs.get(`/api/v1/tickets/${theirTicket._id}`, {
+        headers: theirAuth,
+      });
+      expect(stillThere.ok()).toBe(true);
     } finally {
       await mine.dispose();
       await theirs.dispose();

@@ -274,7 +274,8 @@ registry.registerPath({
 ticketsRouter.get("/", requireAuth, async (req, res) => {
   const auth = (req as AuthRequest).auth;
   const q = ListQuery.parse(req.query);
-  const filter: any = { tenantId: asObjectId(auth.tid) };
+  // Soft-deleted tickets are retained for audit but must not surface in reads.
+  const filter: any = { tenantId: asObjectId(auth.tid), deletedAt: null };
   if (q.status) filter.status = q.status;
   if (q.priority) filter.priority = q.priority;
   if (q.assigneeId) filter.assigneeId = asObjectId(q.assigneeId);
@@ -303,6 +304,7 @@ ticketsRouter.get("/:id", requireAuth, async (req, res) => {
   const ticket = await Ticket.findOne({
     _id: asObjectId(req.params.id),
     tenantId: asObjectId(auth.tid),
+    deletedAt: null,
   }).lean();
   if (!ticket) return res.status(404).json({ error: "not_found" });
 
@@ -991,6 +993,58 @@ ticketsRouter.post(
 );
 
 // DELETE /:id/link/:linkedTicketId — remove bidirectional link
+/**
+ * DELETE /:id — remove a ticket.
+ *
+ * Restricted to TICKET_DELETE, which only OWNER and ADMIN hold: every other
+ * ticket verb is available to agents, but removal is not something an agent
+ * should be able to do to a customer's record.
+ *
+ * The delete is soft. A ticket owns comments, attachments, links and its own
+ * status history, and support records are evidence — so the row is retained,
+ * stamped with who removed it and why, and excluded from reads. Irreversible
+ * erasure is the GDPR purge path's job, not this one.
+ */
+ticketsRouter.delete(
+  "/:id",
+  requireAuth,
+  requirePermission("TICKET_DELETE"),
+  requireActiveSubscription({ write: true }),
+  async (req, res) => {
+    const auth = (req as AuthRequest).auth;
+
+    const result = await Ticket.findOneAndUpdate(
+      {
+        _id: asObjectId(req.params.id),
+        tenantId: asObjectId(auth.tid),
+        deletedAt: null,
+      },
+      {
+        $set: {
+          deletedAt: new Date(),
+          deletedBy: asObjectId(auth.sub),
+          deleteReason: typeof req.body?.reason === "string" ? req.body.reason.slice(0, 500) : undefined,
+        },
+      },
+      { new: true }
+    );
+
+    // Already-deleted and never-existed look the same to the caller, so a
+    // repeated delete cannot be used to probe which ids are real.
+    if (!result) return res.status(404).json({ error: "not_found" });
+
+    try {
+      await logActivity(req, {
+        action: "ticket.deleted",
+        http: 200,
+        meta: { ticketId: String(result._id), reason: result.deleteReason },
+      });
+    } catch { /* ignore */ }
+
+    return res.json({ data: { _id: String(result._id), deletedAt: result.deletedAt } });
+  }
+);
+
 ticketsRouter.delete(
   "/:id/link/:linkedTicketId",
   requireAuth,

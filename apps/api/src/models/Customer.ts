@@ -8,6 +8,10 @@ export interface CustomerDoc {
   phone?: string;
   company?: string;
   customFields?: Map<string, any>;
+  /** Free-form labels for segmenting customers. Normalised lowercase, deduped. */
+  tags?: string[];
+  /** Operator notes. Accepted by the API since before this field existed. */
+  notes?: string;
   isSandbox?: boolean;
   /** Set when the provider reports a hard bounce for this address. */
   emailBounced?: boolean;
@@ -24,6 +28,8 @@ const CustomerSchema = new Schema<CustomerDoc>({
   phone: String,
   company: String,
   customFields: { type: Map, of: Schema.Types.Mixed, default: undefined },
+  tags: { type: [String], default: [] },
+  notes: { type: String, maxlength: 5000 },
   isSandbox: { type: Boolean, default: false, index: true },
   // Bounce suppression. These must be declared: the schema is strict, so an
   // update touching undeclared paths is silently dropped.
@@ -33,6 +39,9 @@ const CustomerSchema = new Schema<CustomerDoc>({
 }, { timestamps: true });
 
 CustomerSchema.index({ tenantId: 1, email: 1 }, { unique: true });
+// Filtering by tag is a per-tenant operation; a bare { tags: 1 } index would
+// scan across tenants.
+CustomerSchema.index({ tenantId: 1, tags: 1 });
 
 // PII field-level encryption at rest (activated when FIELD_ENCRYPTION_KEY is set)
 import { fieldEncryptionPlugin } from "../utils/fieldEncryption";

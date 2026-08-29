@@ -474,3 +474,193 @@ test.describe("tenant isolation", () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------ */
+/*  Tagging                                                            */
+/* ------------------------------------------------------------------ */
+
+test.describe("tags", () => {
+  test("tags supplied on create are persisted", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const customer = await createCustomer(api, auth, { tags: ["vip", "enterprise"] });
+
+      const res = await api.get(`/api/v1/customers/${customer._id}`, { headers: auth });
+      const { data } = await res.json();
+      expect(data.tags.sort()).toEqual(["enterprise", "vip"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("notes supplied on create are persisted", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const customer = await createCustomer(api, auth, { notes: "Prefers email contact." });
+
+      const res = await api.get(`/api/v1/customers/${customer._id}`, { headers: auth });
+      const { data } = await res.json();
+      expect(data.notes).toBe("Prefers email contact.");
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("tags are normalised to lowercase and deduped", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const customer = await createCustomer(api, auth, {
+        tags: ["VIP", "vip", " Vip ", "Churn-Risk"],
+      });
+
+      const res = await api.get(`/api/v1/customers/${customer._id}`, { headers: auth });
+      const { data } = await res.json();
+      expect(data.tags.sort()).toEqual(["churn-risk", "vip"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("tags can be replaced on update", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const customer = await createCustomer(api, auth, { tags: ["old"] });
+
+      await api.put(`/api/v1/customers/${customer._id}`, {
+        headers: auth,
+        data: { tags: ["new", "shiny"] },
+      });
+
+      const res = await api.get(`/api/v1/customers/${customer._id}`, { headers: auth });
+      const { data } = await res.json();
+      expect(data.tags.sort()).toEqual(["new", "shiny"]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("tags can be cleared", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const customer = await createCustomer(api, auth, { tags: ["temporary"] });
+
+      await api.put(`/api/v1/customers/${customer._id}`, {
+        headers: auth,
+        data: { tags: [] },
+      });
+
+      const res = await api.get(`/api/v1/customers/${customer._id}`, { headers: auth });
+      expect((await res.json()).data.tags).toEqual([]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("filtering by tag returns only tagged customers", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const tag = `seg-${process.pid}-${++seq}`;
+      const tagged = await createCustomer(api, auth, { tags: [tag] });
+      const untagged = await createCustomer(api, auth);
+
+      const res = await api.get(`/api/v1/customers?tag=${tag}`, { headers: auth });
+      const { data } = await res.json();
+
+      const ids = data.map((c: any) => c._id);
+      expect(ids).toContain(tagged._id);
+      expect(ids).not.toContain(untagged._id);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("the tag filter is case-insensitive", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const tag = `Seg-${process.pid}-${++seq}`;
+      const tagged = await createCustomer(api, auth, { tags: [tag] });
+
+      const res = await api.get(`/api/v1/customers?tag=${tag.toUpperCase()}`, {
+        headers: auth,
+      });
+      const { data } = await res.json();
+
+      expect(data.map((c: any) => c._id)).toContain(tagged._id);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("search matches a tag exactly, not as a substring", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const base = `lbl${process.pid}${++seq}`;
+      const exact = await createCustomer(api, auth, { tags: [base] });
+      const longer = await createCustomer(api, auth, { tags: [`${base}-extended`] });
+
+      const res = await api.get(`/api/v1/customers?q=${base}`, { headers: auth });
+      const ids = (await res.json()).data.map((c: any) => c._id);
+
+      // A label is an identity, not a prefix: "vip" must not match "vip-churn".
+      expect(ids).toContain(exact._id);
+      expect(ids).not.toContain(longer._id);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("too many tags are rejected", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const res = await api.post("/api/v1/customers", {
+        headers: auth,
+        data: {
+          name: "Too many",
+          email: uniqueEmail(),
+          tags: Array.from({ length: 25 }, (_, i) => `tag-${i}`),
+        },
+      });
+
+      expect(res.status()).toBe(400);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("an over-long tag is rejected", async () => {
+    const { api, auth, dispose } = await asRole("ADMIN");
+    try {
+      const res = await api.post("/api/v1/customers", {
+        headers: auth,
+        data: { name: "Long tag", email: uniqueEmail(), tags: ["x".repeat(41)] },
+      });
+
+      expect(res.status()).toBe(400);
+    } finally {
+      await dispose();
+    }
+  });
+
+  test("another tenant's tagged customer is not returned", async () => {
+    const other = await seedTenant();
+    const mine = await asRole("ADMIN");
+    const theirs = await apiContext();
+    const tag = `xt-${process.pid}-${++seq}`;
+
+    try {
+      const theirSession = await apiSignIn(theirs, other, "ADMIN");
+      const theirAuth = theirSession.accessToken
+        ? { Authorization: `Bearer ${theirSession.accessToken}` }
+        : {};
+      await createCustomer(theirs, theirAuth, { tags: [tag] });
+
+      const res = await mine.api.get(`/api/v1/customers?tag=${tag}`, { headers: mine.auth });
+
+      expect((await res.json()).data).toEqual([]);
+    } finally {
+      await mine.dispose();
+      await theirs.dispose();
+      await cleanupTenant(other.tenantId);
+    }
+  });
+});

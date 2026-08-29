@@ -100,6 +100,9 @@ export const PERMISSIONS = [
   "TICKET_CLOSE",
   "TICKET_ASSIGN",
   "TICKET_REOPEN",
+  // Destructive and irreversible from the operator's point of view, so it is
+  // deliberately narrower than the rest of the ticket verbs: OWNER and ADMIN only.
+  "TICKET_DELETE",
 
   // Comments
   "COMMENT_CREATE",
@@ -175,7 +178,7 @@ export type Permission = (typeof PERMISSIONS)[number];
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   OWNER: new Set([
     // Everything
-    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN",
+    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN", "TICKET_DELETE",
     "COMMENT_CREATE", "COMMENT_READ",
     "CUSTOMER_CREATE", "CUSTOMER_READ", "CUSTOMER_UPDATE",
     "USER_INVITE", "USER_READ", "USER_UPDATE", "USER_DISABLE",
@@ -190,7 +193,7 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
 
   ADMIN: new Set([
     // Everything except ownership transfer and billing management
-    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN",
+    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN", "TICKET_DELETE",
     "COMMENT_CREATE", "COMMENT_READ",
     "CUSTOMER_CREATE", "CUSTOMER_READ", "CUSTOMER_UPDATE",
     "USER_INVITE", "USER_READ", "USER_UPDATE", "USER_DISABLE",
