@@ -368,15 +368,15 @@ Index (jump to module):
 
 ### 21.1 Bootstrap (P0)
 
-- [ ] **[P0]** Install: `pnpm -F @tres-crm/web add -D @playwright/test axe-playwright`
-- [ ] **[P0]** `apps/web/playwright.config.ts` — 3 projects (chromium, firefox, webkit), retry 1 on CI, screenshot on failure, video on retry, trace on first-retry.
-- [ ] **[P0]** `apps/web/tests/fixtures/` — helper for logging in as (owner|admin|agent|readonly) via API + cookie injection; per-worker seeded tenant.
-- [ ] **[P0]** CI job that spins up API (in-memory Mongo via `mongodb-memory-server`), web dev server, and runs the suite. Cache Playwright browsers.
+- [x] **[P0]** Install: `pnpm -F @tres-crm/web add -D @playwright/test axe-playwright` — **DONE 2026-08-29: @playwright/test and @axe-core/playwright installed at the workspace root rather than in apps/web, so one install and one cached browser payload serve both the widget and app suites. axe-playwright is unmaintained; @axe-core/playwright is the maintained equivalent**
+- [x] **[P0]** `apps/web/playwright.config.ts` — 3 projects (chromium, firefox, webkit), retry 1 on CI, screenshot on failure, video on retry, trace on first-retry. — **DONE 2026-08-29 as playwright.app.config.ts at the root, separate from the widget config because the two need different stacks — a single config would boot the API and database for widget runs too. Chromium by default with E2E_ALL_BROWSERS to widen: this drives an internal staff console, whereas the widget lands on visitors' own browsers and does run all three**
+- [x] **[P0]** `apps/web/tests/fixtures/` — helper for logging in as (owner|admin|agent|readonly) via API + cookie injection; per-worker seeded tenant. — **DONE 2026-08-29 at tests/e2e/app/fixtures/. seedTenant() creates a tenant with OWNER/ADMIN/AGENT/READONLY per worker; apiSignIn() completes a real login including the MFA challenge; applySession() transplants the cookies into the browser context. NOTE seeding goes through the database, not signup: signup leaves the user PENDING and mails a verification token that, with delivery disabled, is unobservable — so an account cannot be activated over HTTP alone**
+- [x] **[P0]** CI job that spins up API (in-memory Mongo via `mongodb-memory-server`), web dev server, and runs the suite. Cache Playwright browsers. — **DONE 2026-08-29: the app-e2e job boots the API against mongodb-memory-server and the Next dev server via Playwright's webServer, with the browser payload cached on the Playwright version**
 - [ ] **[P0]** Fail build on any test failure or axe violation of severity ≥ Serious.
 
 ### 21.2 Core Flows (P0)
 
-- [ ] **[P0]** `auth.spec.ts` — sign up new tenant, sign in, sign out, forgot-password, MFA challenge.
+- [ ] **[P0]** `auth.spec.ts` — sign up new tenant, sign in, sign out, forgot-password, MFA challenge. — **PARTIAL 2026-08-29: 11 specs cover password sign-in, rejection of bad credentials, the MFA challenge and its TOTP completion, a wrong TOTP, an MFA ticket refused from a different client, the MFA gate on privileged routes, and the console redirect for anonymous visitors. Sign-up, sign-out and forgot-password are not covered yet — sign-up in particular needs the verification token, which is only reachable through the database**
 - [ ] **[P0]** `tickets.spec.ts` — create ticket, list filter, assign, add comment (internal + public), close, reopen, delete.
 - [ ] **[P0]** `customers.spec.ts` — CRUD + search + tag.
 - [ ] **[P0]** `billing.spec.ts` — view plan, start upgrade → Paystack redirect (mocked), verify success flow.

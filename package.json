@@ -48,7 +48,8 @@
     "prebuild": "pnpm docs:gen",
     "project:clean": "pnpm dlx rimraf node_modules && pnpm install --force",
     "test:widget:e2e": "playwright test",
-    "build:widget": "pnpm --filter @tres-crm/widget build"
+    "build:widget": "pnpm --filter @tres-crm/widget build",
+    "test:app:e2e": "playwright test --config=playwright.app.config.ts"
   },
   "keywords": [],
   "author": "",
