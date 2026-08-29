@@ -21,7 +21,13 @@ export async function connectMongo() {
   // mongoose.set("bufferCommands", false); // fail fast if not connected
   // mongoose.set("strictQuery", true);
 
-  connecting = mongoose.connect(uri, { autoIndex: true })
+  connecting = mongoose.connect(uri, {
+    autoIndex: true,
+    maxPoolSize: 50,
+    minPoolSize: 5,
+    socketTimeoutMS: 45000,
+    serverSelectionTimeoutMS: 5000,
+  })
     .then((m) => {
       console.log(`[db] connected ${uri}`);
       return m;

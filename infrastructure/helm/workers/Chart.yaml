@@ -1,0 +1,13 @@
+apiVersion: v2
+name: tres-crm-workers
+description: TRES CRM background workers - email processing, NATS consumers, scheduled jobs
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: tres-crm-team
+keywords:
+  - workers
+  - background
+  - nats
+  - jobs

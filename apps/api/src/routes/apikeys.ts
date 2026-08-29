@@ -5,11 +5,14 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes } from "crypto";
 import { requireAuth, requirePermission } from "../middlewares/auth";
+import { hashApiKey } from "../middlewares/apiKeyAuth";
 import type { AuthRequest } from "../types/auth";
 import { asObjectId } from "../utils/auth";
 import { ApiKey } from "../models/ApiKey";
+import { Ticket } from "../models/Ticket";
+import { Customer } from "../models/Customer";
 import { registry } from "../docs/swagger";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 
@@ -17,7 +20,15 @@ extendZodWithOpenApi(z);
 
 export const apikeysRouter = Router();
 
-const VALID_SCOPES = ["tickets:read", "tickets:write", "customers:read", "customers:write", "staff:manage"];
+const VALID_SCOPES = [
+  "tickets:read", "tickets:write",
+  "customers:read", "customers:write",
+  "staff:manage",
+  "templates:read", "templates:write",
+  "settings:read", "settings:write",
+  "webhooks:manage",
+  "analytics:read",
+];
 
 const CreateBody = z.object({
   name: z.string().min(1).max(100),
@@ -26,6 +37,7 @@ const CreateBody = z.object({
     { message: `Valid scopes: ${VALID_SCOPES.join(", ")}` }
   ),
   expiresInDays: z.number().int().min(1).max(365).optional(),
+  environment: z.enum(["sandbox", "production"]).default("production"),
 });
 
 const UpdateBody = z.object({
@@ -73,9 +85,10 @@ apikeysRouter.post("/", requireAuth, requirePermission("SETTINGS_UPDATE"), async
   const auth = (req as AuthRequest).auth;
   try {
     const body = CreateBody.parse(req.body);
-    const rawKey = `tcrm_${randomBytes(32).toString("hex")}`;
-    const prefix = rawKey.slice(0, 8);
-    const keyHash = createHash("sha256").update(rawKey).digest("hex");
+    const keyPrefix = body.environment === "sandbox" ? "sk_test_" : "sk_live_";
+    const rawKey = `${keyPrefix}${randomBytes(32).toString("hex")}`;
+    const prefix = rawKey.slice(0, 12);
+    const keyHash = await hashApiKey(rawKey);
 
     const apiKey = await ApiKey.create({
       tenantId: asObjectId(auth.tid),
@@ -83,6 +96,7 @@ apikeysRouter.post("/", requireAuth, requirePermission("SETTINGS_UPDATE"), async
       prefix,
       keyHash,
       scopes: body.scopes,
+      environment: body.environment,
       expiresAt: body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86400000) : undefined,
       createdBy: asObjectId(auth.sub),
     });
@@ -93,6 +107,7 @@ apikeysRouter.post("/", requireAuth, requirePermission("SETTINGS_UPDATE"), async
         name: apiKey.name,
         prefix: apiKey.prefix,
         scopes: apiKey.scopes,
+        environment: apiKey.environment,
         expiresAt: apiKey.expiresAt,
         createdAt: apiKey.createdAt,
       },
@@ -108,7 +123,7 @@ apikeysRouter.post("/", requireAuth, requirePermission("SETTINGS_UPDATE"), async
 apikeysRouter.get("/", requireAuth, requirePermission("SETTINGS_READ"), async (req, res) => {
   const auth = (req as AuthRequest).auth;
   const keys = await ApiKey.find({ tenantId: asObjectId(auth.tid) })
-    .select("name prefix scopes isActive lastUsedAt expiresAt createdAt")
+    .select("name prefix scopes environment isActive lastUsedAt expiresAt createdAt")
     .sort({ createdAt: -1 })
     .lean();
   res.json({ data: keys });
@@ -147,4 +162,26 @@ apikeysRouter.delete("/:id", requireAuth, requirePermission("SETTINGS_UPDATE"), 
   );
   if (!key) return res.status(404).json({ error: "not_found" });
   res.json({ ok: true });
+});
+
+// POST sandbox reset — wipe all sandbox data for the tenant
+export const sandboxRouter = Router();
+
+sandboxRouter.post("/reset", requireAuth, requirePermission("SETTINGS_UPDATE"), async (req, res) => {
+  const auth = (req as AuthRequest).auth;
+  const tenantId = asObjectId(auth.tid);
+  try {
+    const [ticketResult, customerResult] = await Promise.all([
+      Ticket.deleteMany({ tenantId, isSandbox: true }),
+      Customer.deleteMany({ tenantId, isSandbox: true }),
+    ]);
+    res.json({
+      deleted: {
+        tickets: ticketResult.deletedCount,
+        customers: customerResult.deletedCount,
+      },
+    });
+  } catch {
+    res.status(500).json({ error: "internal_error" });
+  }
 });

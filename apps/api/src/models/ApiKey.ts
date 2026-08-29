@@ -7,6 +7,7 @@ export interface ApiKeyDoc {
   prefix: string;
   keyHash: string;
   scopes: string[];
+  environment: "sandbox" | "production";
   isActive: boolean;
   lastUsedAt?: Date;
   expiresAt?: Date;
@@ -17,9 +18,10 @@ export interface ApiKeyDoc {
 const ApiKeySchema = new Schema<ApiKeyDoc>({
   tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", required: true },
   name: { type: String, required: true, maxlength: 100 },
-  prefix: { type: String, required: true, maxlength: 12 },
+  prefix: { type: String, required: true, maxlength: 16 },
   keyHash: { type: String, required: true, unique: true },
   scopes: { type: [String], default: ["tickets:read", "tickets:write"] },
+  environment: { type: String, enum: ["sandbox", "production"], default: "production" },
   isActive: { type: Boolean, default: true },
   lastUsedAt: Date,
   expiresAt: Date,

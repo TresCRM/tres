@@ -7,6 +7,7 @@
 // ─── Roles ───────────────────────────────────────────────────────────
 
 export const ROLES = [
+  // Tenant-scoped roles
   "OWNER",
   "ADMIN",
   "AGENT",
@@ -14,6 +15,12 @@ export const ROLES = [
   "READONLY",
   "INTEGRATION",
   "CUSTOMER",
+  // Platform admin roles
+  "SUPER_ADMIN",
+  "MANAGER",
+  "SALES",
+  "CUSTOMER_CARE",
+  "SPECIAL",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
@@ -27,6 +34,11 @@ export const ROLE_LABELS: Record<Role, string> = {
   READONLY: "Read Only",
   INTEGRATION: "API Integration",
   CUSTOMER: "Customer",
+  SUPER_ADMIN: "Super Administrator",
+  MANAGER: "Platform Manager",
+  SALES: "Sales Representative",
+  CUSTOMER_CARE: "Customer Care Agent",
+  SPECIAL: "Special Operations",
 };
 
 /**
@@ -37,18 +49,34 @@ export const ROLE_LABELS: Record<Role, string> = {
  */
 const HIERARCHY: Role[] = ["READONLY", "AGENT", "ADMIN", "OWNER"];
 
+/** Admin hierarchy — separate from tenant hierarchy */
+const ADMIN_HIERARCHY: Role[] = ["CUSTOMER_CARE", "SALES", "MANAGER", "SUPER_ADMIN"];
+
 /** Lateral roles that exist outside the main hierarchy */
-const LATERAL_ROLES: Set<Role> = new Set(["BILLING", "INTEGRATION", "CUSTOMER"]);
+const LATERAL_ROLES: Set<Role> = new Set(["BILLING", "INTEGRATION", "CUSTOMER", "SPECIAL"]);
+
+/** All platform admin roles */
+export const ADMIN_ROLES: ReadonlySet<Role> = new Set(["SUPER_ADMIN", "MANAGER", "SALES", "CUSTOMER_CARE", "SPECIAL"]);
+
+/** Check if a role is a platform admin role */
+export function isAdminRole(role: Role): boolean {
+  return ADMIN_ROLES.has(role);
+}
 
 /**
  * Check if `userRole` meets or exceeds `requiredRole` in the hierarchy.
  * Returns false for lateral roles -- those must be checked by name.
  */
 export function meetsHierarchy(userRole: Role, requiredRole: Role): boolean {
+  // Check tenant hierarchy
   const userIdx = HIERARCHY.indexOf(userRole);
   const reqIdx = HIERARCHY.indexOf(requiredRole);
-  if (userIdx === -1 || reqIdx === -1) return false; // lateral role, no hierarchy
-  return userIdx >= reqIdx;
+  if (userIdx !== -1 && reqIdx !== -1) return userIdx >= reqIdx;
+  // Check admin hierarchy
+  const adminUserIdx = ADMIN_HIERARCHY.indexOf(userRole);
+  const adminReqIdx = ADMIN_HIERARCHY.indexOf(requiredRole);
+  if (adminUserIdx !== -1 && adminReqIdx !== -1) return adminUserIdx >= adminReqIdx;
+  return false; // lateral role or cross-hierarchy
 }
 
 /**
@@ -72,6 +100,9 @@ export const PERMISSIONS = [
   "TICKET_CLOSE",
   "TICKET_ASSIGN",
   "TICKET_REOPEN",
+  // Destructive and irreversible from the operator's point of view, so it is
+  // deliberately narrower than the rest of the ticket verbs: OWNER and ADMIN only.
+  "TICKET_DELETE",
 
   // Comments
   "COMMENT_CREATE",
@@ -113,6 +144,27 @@ export const PERMISSIONS = [
 
   // Ownership (non-hierarchical, OWNER-only)
   "OWNERSHIP_TRANSFER",
+
+  // ─── Platform Admin Permissions ───────────────────
+  "ADMIN_TENANT_READ",
+  "ADMIN_TENANT_UPDATE",
+  "ADMIN_TENANT_SUSPEND",
+  "ADMIN_TENANT_DELETE",
+  "ADMIN_USER_READ",
+  "ADMIN_USER_UPDATE",
+  "ADMIN_USER_IMPERSONATE",
+  "ADMIN_SUBSCRIPTION_READ",
+  "ADMIN_SUBSCRIPTION_UPDATE",
+  "ADMIN_SUBSCRIPTION_CANCEL",
+  "ADMIN_TICKET_READ",
+  "ADMIN_TICKET_ESCALATE",
+  "ADMIN_CONTENT_READ",
+  "ADMIN_CONTENT_UPDATE",
+  "ADMIN_ANALYTICS_READ",
+  "ADMIN_AUDIT_READ",
+  "ADMIN_SETTINGS_READ",
+  "ADMIN_SETTINGS_UPDATE",
+  "ADMIN_ANNOUNCEMENT_CREATE",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -126,7 +178,7 @@ export type Permission = (typeof PERMISSIONS)[number];
 export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   OWNER: new Set([
     // Everything
-    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN",
+    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN", "TICKET_DELETE",
     "COMMENT_CREATE", "COMMENT_READ",
     "CUSTOMER_CREATE", "CUSTOMER_READ", "CUSTOMER_UPDATE",
     "USER_INVITE", "USER_READ", "USER_UPDATE", "USER_DISABLE",
@@ -141,7 +193,7 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
 
   ADMIN: new Set([
     // Everything except ownership transfer and billing management
-    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN",
+    "TICKET_CREATE", "TICKET_READ", "TICKET_UPDATE", "TICKET_CLOSE", "TICKET_ASSIGN", "TICKET_REOPEN", "TICKET_DELETE",
     "COMMENT_CREATE", "COMMENT_READ",
     "CUSTOMER_CREATE", "CUSTOMER_READ", "CUSTOMER_UPDATE",
     "USER_INVITE", "USER_READ", "USER_UPDATE", "USER_DISABLE",
@@ -187,6 +239,61 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   CUSTOMER: new Set([
     "TICKET_CREATE", "TICKET_READ",
     "COMMENT_CREATE", "COMMENT_READ",
+  ]),
+
+  // ─── Platform Admin Roles ────────────────────────────
+
+  SUPER_ADMIN: new Set([
+    // Full platform access
+    "ADMIN_TENANT_READ", "ADMIN_TENANT_UPDATE", "ADMIN_TENANT_SUSPEND", "ADMIN_TENANT_DELETE",
+    "ADMIN_USER_READ", "ADMIN_USER_UPDATE", "ADMIN_USER_IMPERSONATE",
+    "ADMIN_SUBSCRIPTION_READ", "ADMIN_SUBSCRIPTION_UPDATE", "ADMIN_SUBSCRIPTION_CANCEL",
+    "ADMIN_TICKET_READ", "ADMIN_TICKET_ESCALATE",
+    "ADMIN_CONTENT_READ", "ADMIN_CONTENT_UPDATE",
+    "ADMIN_ANALYTICS_READ",
+    "ADMIN_AUDIT_READ",
+    "ADMIN_SETTINGS_READ", "ADMIN_SETTINGS_UPDATE",
+    "ADMIN_ANNOUNCEMENT_CREATE",
+    "ADMIN_PANEL_ACCESS",
+  ]),
+
+  MANAGER: new Set([
+    // Tenant + user + subscription management, analytics, audit
+    "ADMIN_TENANT_READ", "ADMIN_TENANT_UPDATE", "ADMIN_TENANT_SUSPEND",
+    "ADMIN_USER_READ", "ADMIN_USER_UPDATE",
+    "ADMIN_SUBSCRIPTION_READ", "ADMIN_SUBSCRIPTION_UPDATE",
+    "ADMIN_TICKET_READ", "ADMIN_TICKET_ESCALATE",
+    "ADMIN_ANALYTICS_READ",
+    "ADMIN_AUDIT_READ",
+    "ADMIN_SETTINGS_READ",
+    "ADMIN_PANEL_ACCESS",
+  ]),
+
+  SALES: new Set([
+    // Subscription and tenant onboarding focus
+    "ADMIN_TENANT_READ",
+    "ADMIN_USER_READ",
+    "ADMIN_SUBSCRIPTION_READ", "ADMIN_SUBSCRIPTION_UPDATE",
+    "ADMIN_ANALYTICS_READ",
+    "ADMIN_PANEL_ACCESS",
+  ]),
+
+  CUSTOMER_CARE: new Set([
+    // Cross-tenant ticket support and customer lookup
+    "ADMIN_TENANT_READ",
+    "ADMIN_USER_READ",
+    "ADMIN_TICKET_READ", "ADMIN_TICKET_ESCALATE",
+    "ADMIN_SUBSCRIPTION_READ",
+    "ADMIN_PANEL_ACCESS",
+  ]),
+
+  SPECIAL: new Set([
+    // Content management, announcements, policies
+    "ADMIN_CONTENT_READ", "ADMIN_CONTENT_UPDATE",
+    "ADMIN_ANNOUNCEMENT_CREATE",
+    "ADMIN_ANALYTICS_READ",
+    "ADMIN_AUDIT_READ",
+    "ADMIN_PANEL_ACCESS",
   ]),
 };
 

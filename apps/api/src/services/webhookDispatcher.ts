@@ -7,6 +7,7 @@ import { createHmac } from "crypto";
 import { Webhook } from "../models/Webhook";
 import { DomainEvent } from "../models/DomainEvent";
 import { Types } from "mongoose";
+import { isSafeOutboundUrl } from "../utils/ssrf";
 
 const MAX_FAILURES = 10;
 
@@ -55,6 +56,14 @@ export async function dispatchWebhooks(tenantId: string, event: string, data: Re
 }
 
 async function deliverWebhook(wh: any, body: string): Promise<void> {
+  // Re-check at dispatch time, not just on write: rows created before the
+  // validation existed, or edited directly in the database, would otherwise
+  // still be requested. Repeated rejections auto-disable the webhook.
+  if (!isSafeOutboundUrl(wh.url)) {
+    await handleFailure(wh);
+    return;
+  }
+
   const signature = signPayload(body, wh.secret);
   const timestamp = new Date().toISOString();
 
@@ -101,6 +110,9 @@ async function handleFailure(wh: any): Promise<void> {
 export async function sendTestWebhook(webhookId: string, tenantId: string): Promise<{ success: boolean; statusCode?: number; error?: string }> {
   const wh = await Webhook.findOne({ _id: new Types.ObjectId(webhookId), tenantId: new Types.ObjectId(tenantId) });
   if (!wh) return { success: false, error: "Webhook not found" };
+  if (!isSafeOutboundUrl(wh.url)) {
+    return { success: false, error: "Destination is not a public http(s) endpoint" };
+  }
 
   const payload: WebhookPayload = {
     event: "test.ping",

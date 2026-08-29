@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Highest number of high-severity advisories tolerated in production dependencies.",
+    "The security-audit workflow fails when the live count exceeds this, so a change that",
+    "introduces a new high-severity advisory is blocked while the existing backlog is not.",
+    "",
+    "This number may only go down. When you remove advisories, lower it in the same PR so",
+    "the ceiling ratchets and the ground you gained cannot be lost again.",
+    "",
+    "Any CRITICAL advisory fails the build outright, regardless of this baseline.",
+    "",
+    "The backlog is concentrated in a handful of direct dependencies -- as of the last",
+    "review: axios, swagger-ui-react and @opentelemetry/sdk-node. Clearing it is a",
+    "dependency-upgrade exercise, not a config change.",
+    "",
+    "NOTE: this counts distinct ADVISORIES, which is what the workflow measures.",
+    "pnpm's own summary line reports FINDINGS, which is higher (one advisory can be",
+    "reached by several paths). Do not copy the number off the summary line -- it would",
+    "leave slack in the ceiling."
+  ],
+  "recordedOn": "2026-08-27",
+  "prodHigh": 50
+}

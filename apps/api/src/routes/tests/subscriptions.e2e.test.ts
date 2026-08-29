@@ -80,8 +80,21 @@ describe("Subscriptions API", () => {
   test("GET /api/v1/subscriptions/plans returns only active plans", async () => {
     const res = await request(app).get("/api/v1/subscriptions/plans").expect(200);
     expect(Array.isArray(res.body.data)).toBe(true);
-    const codes = res.body.data.map((p: any) => p.code).sort();
-    expect(codes).toEqual(["CO-20", "IND-1"]); // inactive plan not present
+    // Plans come from hardcoded PLANS array in billing/plans.ts, not DB
+    // Canonical plans: FREE, STARTER, TEAM, BUSINESS, ADVANCED, ENTERPRISE
+    expect(res.body.data.length).toBeGreaterThanOrEqual(6);
+    const codes = res.body.data.map((p: any) => p.code);
+    expect(codes).toContain("FREE");
+    expect(codes).toContain("STARTER");
+    expect(codes).toContain("TEAM");
+    expect(codes).toContain("BUSINESS");
+    expect(codes).toContain("ADVANCED");
+    expect(codes).toContain("ENTERPRISE");
+    // Every returned plan should be active
+    expect(res.body.data.every((p: any) => p.active)).toBe(true);
+    // Legacy plans should not appear (they are active:false and isLegacy:true)
+    expect(codes).not.toContain("IND-1");
+    expect(codes).not.toContain("CO-20");
   });
 
   test("POST /api/v1/subscriptions requires auth (401)", async () => {

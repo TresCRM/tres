@@ -66,3 +66,6 @@ docker-compose.override.yml
 .cache/
 .temp/
 .tmp/
+
+# E2E stack coordination file (written at run time)
+tests/e2e/app/fixtures/.stack.json

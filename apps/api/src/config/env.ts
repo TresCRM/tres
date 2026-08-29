@@ -128,5 +128,29 @@ export const ENV = {
   // --- Security ---
   ACCOUNT_LOCKOUT_ATTEMPTS: int("ACCOUNT_LOCKOUT_ATTEMPTS", 10),
   ACCOUNT_LOCKOUT_MINUTES: int("ACCOUNT_LOCKOUT_MINUTES", 30),
-  PASSWORD_MIN_LENGTH: int("PASSWORD_MIN_LENGTH", 8),
+  PASSWORD_MIN_LENGTH: int("PASSWORD_MIN_LENGTH", 10),
+  PASSWORD_MAX_AGE_DAYS: int("PASSWORD_MAX_AGE_DAYS", 90),
+
+  // --- ImageKit (file uploads) ---
+  IMAGEKIT_PUBLIC_KEY: optional("IMAGEKIT_PUBLIC_KEY", ""),
+  IMAGEKIT_PRIVATE_KEY: optional("IMAGEKIT_PRIVATE_KEY", ""),
+  IMAGEKIT_URL_ENDPOINT: optional("IMAGEKIT_URL_ENDPOINT", ""),
+  IMAGEKIT_ID: optional("IMAGEKIT_ID", ""),
+
+  // --- Google OAuth (optional — feature disabled when GOOGLE_CLIENT_ID is empty) ---
+  GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID", ""),
+  GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET", ""),
+  GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL", ""),
+
+  // --- Microsoft OAuth (optional — feature disabled when MICROSOFT_CLIENT_ID is empty) ---
+  MICROSOFT_CLIENT_ID: optional("MICROSOFT_CLIENT_ID", ""),
+  MICROSOFT_CLIENT_SECRET: optional("MICROSOFT_CLIENT_SECRET", ""),
+  MICROSOFT_CALLBACK_URL: optional("MICROSOFT_CALLBACK_URL", ""),
+
+  // --- Platform Admin ---
+  ADMIN_EMAIL: optional("ADMIN_EMAIL", "admin@trescrm.local"),
+  ADMIN_PASSWORD: optional("ADMIN_PASSWORD", isTest ? "AdminPass123!" : ""),
+  ADMIN_FIRST_NAME: optional("ADMIN_FIRST_NAME", "Platform"),
+  ADMIN_LAST_NAME: optional("ADMIN_LAST_NAME", "Admin"),
+  PLATFORM_TENANT_SLUG: "__platform__",
 };

@@ -24,18 +24,26 @@ export function enforceTicketLimit() {
     const limit = getPlanTicketLimit(sub.planCode);
     if (limit === null) return next(); // unlimited plan
 
-    // Check lifetime count
-    const tenant = await Tenant.findById(tenantId).select("lifetimeTicketCount").lean();
-    if (!tenant) return next();
+    // Atomic increment: only succeeds if count is below limit
+    const updated = await Tenant.findOneAndUpdate(
+      { _id: tenantId, lifetimeTicketCount: { $lt: limit } },
+      { $inc: { lifetimeTicketCount: 1 } },
+      { new: true }
+    );
 
-    if (tenant.lifetimeTicketCount >= limit) {
+    if (!updated) {
+      // Either tenant not found or limit reached
+      const tenant = await Tenant.findById(tenantId).select("lifetimeTicketCount").lean();
       return res.status(403).json({
         error: "ticket_limit_reached",
         message: `Free tier limit of ${limit} tickets reached. Please upgrade your plan.`,
         limit,
-        used: tenant.lifetimeTicketCount,
+        used: tenant?.lifetimeTicketCount ?? limit,
       });
     }
+
+    // Mark that we already incremented so the route handler doesn't double-increment
+    (req as any)._ticketCountIncremented = true;
 
     next();
   };

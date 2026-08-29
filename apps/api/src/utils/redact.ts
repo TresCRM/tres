@@ -1,8 +1,10 @@
 type Plain = Record<string, any>;
 
+// Lookups below lowercase the incoming key, so these entries must be lowercase
+// too — otherwise camelCase secrets (refreshToken, newPassword, ...) never match.
 const SENSITIVE_KEYS = new Set([
-  "password", "passwordConfirm", "currentPassword", "newPassword",
-  "token", "accessToken", "refreshToken"
+  "password", "passwordconfirm", "currentpassword", "newpassword",
+  "token", "accesstoken", "refreshtoken"
 ]);
 
 export function redactBody(input: any): any {

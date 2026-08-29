@@ -1,0 +1,68 @@
+replicaCount: 1
+
+image:
+  repository: trescrmacr.azurecr.io/tres-crm-workers
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Workers do not expose HTTP traffic
+service:
+  enabled: false
+
+ingress:
+  enabled: false
+
+# Port the worker's /healthz and /readyz endpoints listen on. Must match
+# WORKER_HEALTH_PORT if that is overridden in the environment.
+healthPort: 4100
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+
+configMapRef:
+  name: tres-crm-workers-config
+
+secretRef:
+  name: tres-crm-workers-secrets
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -13,6 +13,7 @@ import { User } from "../models/User";
 import { Subscription } from "../models/Subscription";
 import { sendEmail } from "../services/mailer";
 import { ENV } from "../config/env";
+import { enforceSeatLimit } from "../middlewares/seatGuard";
 import { registry } from "../docs/swagger";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { ROLES, isValidRole } from "../../../../packages/types/src/roles";
@@ -110,7 +111,7 @@ registry.registerPath({
 /* ---------- Routes ---------- */
 
 // POST invite user
-usersRouter.post("/invite", requireAuth, requirePermission("USER_INVITE"), async (req, res) => {
+usersRouter.post("/invite", requireAuth, requirePermission("USER_INVITE"), enforceSeatLimit, async (req, res) => {
   const auth = (req as AuthRequest).auth;
   try {
     const body = InviteBody.parse(req.body);

@@ -9,6 +9,7 @@ export interface RefreshTokenDoc {
   ip?: string;
   expiresAt: Date;
   revokedAt?: Date;
+  replacedByHash?: string;
   createdAt: Date;
 }
 
@@ -20,6 +21,7 @@ const RefreshTokenSchema = new Schema<RefreshTokenDoc>({
   ip: String,
   expiresAt: { type: Date, required: true },
   revokedAt: Date,
+  replacedByHash: String,
   createdAt: { type: Date, default: Date.now },
 }, { versionKey: false });
 

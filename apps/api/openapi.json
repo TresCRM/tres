@@ -5,24 +5,322 @@
     "version": "1.0.0"
   },
   "components": {
-    "schemas": {},
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "Ticket": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ASSIGNED",
+              "IN_PROGRESS",
+              "AWAITING_CUSTOMER",
+              "TRANSFERRED",
+              "RESOLVED",
+              "CLOSED",
+              "REOPENED"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
+          },
+          "assigneeId": {
+            "type": "string",
+            "nullable": true
+          },
+          "customerEmail": {
+            "type": "string",
+            "nullable": true,
+            "format": "email"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "watchers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_id",
+          "tenantId",
+          "subject",
+          "body",
+          "status",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "ticketId": {
+            "type": "string"
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "isAgent": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "_id",
+          "tenantId",
+          "ticketId",
+          "authorId",
+          "body",
+          "isAgent",
+          "createdAt"
+        ]
+      },
+      "SubscribeBody": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "example": "6512bd43d9caa6e02c990b0a"
+          },
+          "planCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 34
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "PAST_DUE",
+              "GRACE",
+              "EXPIRED",
+              "CANCELED"
+            ]
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "MONTH",
+              "QUARTER",
+              "SEMIANNUAL",
+              "ANNUAL"
+            ]
+          },
+          "currentPeriodStart": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-10-12T00:00:00Z"
+          },
+          "currentPeriodEnd": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-10-12T00:00:00Z"
+          },
+          "graceUntil": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "example": "2025-10-12T00:00:00Z"
+          },
+          "canceledAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "example": "2025-10-12T00:00:00Z"
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastPaymentAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "example": "2025-10-12T00:00:00Z"
+          },
+          "seats": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "failedPaymentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          },
+          "entitlements": {
+            "type": "object",
+            "additionalProperties": true,
+            "example": {
+              "sso": true,
+              "analytics": {
+                "enabled": true
+              },
+              "seats": 10
+            }
+          }
+        },
+        "required": [
+          "tenantId",
+          "planCode",
+          "status",
+          "interval",
+          "currentPeriodStart",
+          "currentPeriodEnd",
+          "provider"
+        ]
+      }
+    },
     "parameters": {}
   },
   "paths": {
-    "/api/v1/subscriptions": {
+    "/api/v1/auth/signup": {
       "post": {
+        "tags": [
+          "Auths"
+        ],
+        "security": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "planCode": {
-                    "type": "string"
+                  "tenant": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 2
+                      },
+                      "slug": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9-]+$/i"
+                      },
+                      "plan": {
+                        "type": "string",
+                        "enum": [
+                          "INDIVIDUAL",
+                          "COMPANY"
+                        ],
+                        "default": "INDIVIDUAL"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "slug"
+                    ]
+                  },
+                  "owner": {
+                    "type": "object",
+                    "properties": {
+                      "firstName": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "lastName": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "email": {
+                        "type": "string",
+                        "format": "email"
+                      },
+                      "password": {
+                        "type": "string",
+                        "minLength": 10,
+                        "pattern": "[A-Z]"
+                      }
+                    },
+                    "required": [
+                      "firstName",
+                      "lastName",
+                      "email",
+                      "password"
+                    ]
+                  },
+                  "branding": {
+                    "type": "object",
+                    "properties": {
+                      "primaryColor": {
+                        "type": "string"
+                      },
+                      "surfaceColor": {
+                        "type": "string"
+                      },
+                      "logoUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "emailFrom": {
+                        "type": "string",
+                        "format": "email"
+                      }
+                    }
                   }
                 },
                 "required": [
-                  "planCode"
+                  "tenant",
+                  "owner"
                 ]
               }
             }
@@ -30,13 +328,687 @@
         },
         "responses": {
           "201": {
-            "description": "Subscribed"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tenant": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ]
+                    },
+                    "owner": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string",
+                          "format": "email"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "PENDING",
+                            "ACTIVE",
+                            "DISABLED"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "status"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "tenant",
+                    "owner"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "409": {
+            "description": "Conflict (tenant slug taken)"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/verify": {
+      "post": {
+        "tags": [
+          "Auths"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "tenantSlug": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "token": {
+                    "type": "string",
+                    "minLength": 10
+                  }
+                },
+                "required": [
+                  "email",
+                  "tenantSlug",
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Tenant not found"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Auths"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "tenantSlug": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "tenantSlug"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string",
+                          "format": "email"
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "roles"
+                      ]
+                    },
+                    "tenant": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accessToken",
+                    "refreshToken",
+                    "user",
+                    "tenant"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bad credentials"
+          },
+          "403": {
+            "description": "User not active"
+          },
+          "404": {
+            "description": "Tenant not found"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "Auths"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accessToken"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid refresh token"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Auths"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sub": {
+                      "type": "string"
+                    },
+                    "tid": {
+                      "type": "string"
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sub",
+                    "tid",
+                    "roles"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Auths"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/cookie-me": {
+      "get": {
+        "tags": [
+          "Auths"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "role"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions": {
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "description": "Create/update tenant subscription (MVP manual activation).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upserted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/pay": {
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "description": "Simulate payment/renewal for current or next period.",
+        "responses": {
+          "201": {
+            "description": "Paid"
+          },
+          "400": {
+            "description": "Invalid"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/cancel": {
+      "post": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "description": "Cancel at period end.",
+        "responses": {
+          "200": {
+            "description": "Canceled"
+          },
+          "400": {
+            "description": "Invalid"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/plans": {
+      "get": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "description": "List active plans",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/subscriptions/me": {
+      "get": {
+        "tags": [
+          "Subscriptions"
+        ],
+        "description": "Current subscription for tenant",
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
     },
     "/api/v1/tickets": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "List tickets with filters and cursor pagination.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "ASSIGNED",
+                "IN_PROGRESS",
+                "AWAITING_CUSTOMER",
+                "TRANSFERRED",
+                "RESOLVED",
+                "CLOSED",
+                "REOPENED"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ]
+            },
+            "required": false,
+            "name": "priority",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "assigneeId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_id": {
+                            "type": "string"
+                          },
+                          "tenantId": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "OPEN",
+                              "ASSIGNED",
+                              "IN_PROGRESS",
+                              "AWAITING_CUSTOMER",
+                              "TRANSFERRED",
+                              "RESOLVED",
+                              "CLOSED",
+                              "REOPENED"
+                            ]
+                          },
+                          "priority": {
+                            "type": "string",
+                            "enum": [
+                              "LOW",
+                              "MEDIUM",
+                              "HIGH",
+                              "CRITICAL"
+                            ]
+                          },
+                          "assigneeId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "customerEmail": {
+                            "type": "string",
+                            "nullable": true,
+                            "format": "email"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "watchers": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "format": "email"
+                            }
+                          },
+                          "createdBy": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "_id",
+                          "tenantId",
+                          "subject",
+                          "body",
+                          "status",
+                          "createdBy",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -56,7 +1028,8 @@
                     "enum": [
                       "LOW",
                       "MEDIUM",
-                      "HIGH"
+                      "HIGH",
+                      "CRITICAL"
                     ]
                   },
                   "customerEmail": {
@@ -65,8 +1038,17 @@
                   },
                   "tags": {
                     "type": "array",
+                    "nullable": true,
                     "items": {
                       "type": "string"
+                    }
+                  },
+                  "watchers": {
+                    "type": "array",
+                    "nullable": true,
+                    "items": {
+                      "type": "string",
+                      "format": "email"
                     }
                   }
                 },
@@ -80,7 +1062,770 @@
         },
         "responses": {
           "201": {
-            "description": "Ticket created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "tenantId": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "ASSIGNED",
+                            "IN_PROGRESS",
+                            "AWAITING_CUSTOMER",
+                            "TRANSFERRED",
+                            "RESOLVED",
+                            "CLOSED",
+                            "REOPENED"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ]
+                        },
+                        "assigneeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "customerEmail": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "email"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "watchers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "email"
+                          }
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "tenantId",
+                        "subject",
+                        "body",
+                        "status",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    },
+                    "idempotent": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "402": {
+            "description": "Payment required (expired subscription)"
+          }
+        }
+      }
+    },
+    "/api/v1/tickets/{id}": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "tenantId": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "ASSIGNED",
+                            "IN_PROGRESS",
+                            "AWAITING_CUSTOMER",
+                            "TRANSFERRED",
+                            "RESOLVED",
+                            "CLOSED",
+                            "REOPENED"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ]
+                        },
+                        "assigneeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "customerEmail": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "email"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "watchers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "email"
+                          }
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "comments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "_id": {
+                                "type": "string"
+                              },
+                              "tenantId": {
+                                "type": "string"
+                              },
+                              "ticketId": {
+                                "type": "string"
+                              },
+                              "authorId": {
+                                "type": "string"
+                              },
+                              "body": {
+                                "type": "string"
+                              },
+                              "isAgent": {
+                                "type": "boolean"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "_id",
+                              "tenantId",
+                              "ticketId",
+                              "authorId",
+                              "body",
+                              "isAgent",
+                              "createdAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "tenantId",
+                        "subject",
+                        "body",
+                        "status",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt",
+                        "comments"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/tickets/{id}/reply": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "isInternal": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "tenantId": {
+                          "type": "string"
+                        },
+                        "ticketId": {
+                          "type": "string"
+                        },
+                        "authorId": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "isAgent": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "tenantId",
+                        "ticketId",
+                        "authorId",
+                        "body",
+                        "isAgent",
+                        "createdAt"
+                      ]
+                    },
+                    "idempotent": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/tickets/{id}/assign": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assigneeId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "assigneeId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "tenantId": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "ASSIGNED",
+                            "IN_PROGRESS",
+                            "AWAITING_CUSTOMER",
+                            "TRANSFERRED",
+                            "RESOLVED",
+                            "CLOSED",
+                            "REOPENED"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ]
+                        },
+                        "assigneeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "customerEmail": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "email"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "watchers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "email"
+                          }
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "tenantId",
+                        "subject",
+                        "body",
+                        "status",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/tickets/{id}/close": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "tenantId": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "ASSIGNED",
+                            "IN_PROGRESS",
+                            "AWAITING_CUSTOMER",
+                            "TRANSFERRED",
+                            "RESOLVED",
+                            "CLOSED",
+                            "REOPENED"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ]
+                        },
+                        "assigneeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "customerEmail": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "email"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "watchers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "email"
+                          }
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "tenantId",
+                        "subject",
+                        "body",
+                        "status",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/tickets/{id}/status": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Explicitly transition a ticket to a new status.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "OPEN",
+                      "ASSIGNED",
+                      "IN_PROGRESS",
+                      "AWAITING_CUSTOMER",
+                      "TRANSFERRED",
+                      "RESOLVED",
+                      "CLOSED",
+                      "REOPENED"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "_id": {
+                          "type": "string"
+                        },
+                        "tenantId": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "ASSIGNED",
+                            "IN_PROGRESS",
+                            "AWAITING_CUSTOMER",
+                            "TRANSFERRED",
+                            "RESOLVED",
+                            "CLOSED",
+                            "REOPENED"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                          ]
+                        },
+                        "assigneeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "customerEmail": {
+                          "type": "string",
+                          "nullable": true,
+                          "format": "email"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "watchers": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "email"
+                          }
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_id",
+                        "tenantId",
+                        "subject",
+                        "body",
+                        "status",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid transition"
+          },
+          "404": {
+            "description": "Not found"
           }
         }
       }

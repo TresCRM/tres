@@ -72,3 +72,19 @@ settingsRouter.put("/branding", requireAuth, requirePermission("SETTINGS_UPDATE"
     return res.status(500).json({ error: "internal_error" });
   }
 });
+
+// POST /test-email — send a test email to verify SMTP configuration
+settingsRouter.post("/test-email", requireAuth, requirePermission("SETTINGS_UPDATE"), async (req, res) => {
+  try {
+    const { to } = z.object({ to: z.string().email() }).parse(req.body);
+    const { sendTestEmail } = await import("../services/mailer");
+    const result = await sendTestEmail(to);
+    if (result.success) {
+      return res.json({ ok: true, messageId: result.messageId });
+    }
+    return res.status(502).json({ error: "smtp_error", message: result.error });
+  } catch (e: any) {
+    if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request" });
+    return res.status(500).json({ error: "internal_error" });
+  }
+});

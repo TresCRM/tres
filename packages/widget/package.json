@@ -6,11 +6,15 @@
   "main": "dist/tres-widget.js",
   "module": "dist/tres-widget.mjs",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "vite": "^7.1.10"
+  }
 }

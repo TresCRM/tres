@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMapRef.name }}
+  labels:
+    {{- include "tres-crm-api.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.env.NODE_ENV | quote }}
+  PORT: {{ .Values.env.PORT | quote }}
+  LOG_LEVEL: {{ .Values.env.LOG_LEVEL | quote }}
+  # NATS and MongoDB hosts are injected here; secrets (passwords, keys) go in the Secret resource
+  # NATS_URL: "nats://nats.internal:4222"
+  # MONGO_DB_NAME: "tres-crm"

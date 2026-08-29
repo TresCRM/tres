@@ -1,0 +1,97 @@
+name: Security Audit (Dependencies)
+
+on:
+  push:
+    branches: [main, rbac-implement]
+    paths:
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "apps/*/package.json"
+      - ".github/workflows/security-audit.yml"
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      # Report only — the enforcing gate is the ratchet step below.
+      - name: pnpm audit (production, report)
+        run: pnpm audit --prod --audit-level=high || true
+
+      - name: pnpm audit (all)
+        run: |
+          echo "## Full Audit Report" >> $GITHUB_STEP_SUMMARY
+          pnpm audit 2>&1 | tee audit-report.txt || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat audit-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      # Gate. Any critical fails outright. High-severity findings are held to a
+      # committed ceiling (.github/audit-baseline.json) rather than to zero:
+      # there is an existing backlog of ~50 in production dependencies, so
+      # failing on any high would mean a permanently red build and no signal at
+      # all. This way a change that ADDS a high-severity advisory is blocked,
+      # and the ceiling can only be lowered.
+      - name: Enforce vulnerability ceiling
+        run: |
+          set -euo pipefail
+
+          BASELINE=$(jq -r '.prodHigh' .github/audit-baseline.json)
+          pnpm audit --prod --json > audit-prod.json 2>/dev/null || true
+
+          CRITICAL=$(jq '[.advisories // {} | to_entries[] | select(.value.severity == "critical")] | length' audit-prod.json)
+          HIGH=$(jq '[.advisories // {} | to_entries[] | select(.value.severity == "high")] | length' audit-prod.json)
+
+          echo "Production advisories — critical: $CRITICAL, high: $HIGH (ceiling: $BASELINE)"
+          {
+            echo "## Vulnerability gate"
+            echo "- critical: $CRITICAL (any fails)"
+            echo "- high: $HIGH against a ceiling of $BASELINE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::error::$CRITICAL critical advisory(ies) in production dependencies"
+            exit 1
+          fi
+
+          if [ "$HIGH" -gt "$BASELINE" ]; then
+            echo "::error::High-severity advisories rose to $HIGH, above the ceiling of $BASELINE. Upgrade the offending dependency, or raise the ceiling deliberately with justification."
+            exit 1
+          fi
+
+          if [ "$HIGH" -lt "$BASELINE" ]; then
+            echo "::notice::High-severity advisories are down to $HIGH (ceiling $BASELINE). Lower prodHigh in .github/audit-baseline.json to lock in the improvement."
+          fi
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report
+          path: audit-report.txt
+          retention-days: 30

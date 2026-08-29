@@ -1,3 +1,6 @@
+// Loads pino-http's Express augmentation so `req.log` is typed regardless of
+// which entrypoint pulls this module in (e.g. docs/generate.ts, which never imports app.ts).
+import type {} from "pino-http";
 import type { Request, Response, NextFunction } from "express";
 import type { AuthRequest } from "../types/auth";
 import { ZodError } from "zod";
@@ -17,20 +20,23 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
       message:any = ERR.INTERNAL.message, 
       details: any;
 
+  const isProd = process.env.NODE_ENV === "production";
+
   if (err instanceof HttpError ) {
     http = err.http; code = err.code; message = err.message; details = err.details;
   } else if (err instanceof ZodError) {
-    http = 400; 
-    code = ERR.VALIDATION.code; 
-    message = ERR.VALIDATION.message; 
-    details = err.message;
+    http = 400;
+    code = ERR.VALIDATION.code;
+    message = ERR.VALIDATION.message;
+    // Never leak schema details in production
+    details = isProd ? "Validation failed" : err.issues.map(i => ({ path: i.path.join("."), message: i.message }));
   }
 
   if (err instanceof MongoServerError && err.code === 11000) {
-    http = 409; 
-    code = ERR.MONGOERRORS.code; 
-    message = ERR.MONGOERRORS.message; 
-    details = err.message || 'Duplicate';
+    http = 409;
+    code = ERR.MONGOERRORS.code;
+    message = ERR.MONGOERRORS.message;
+    details = isProd ? "Duplicate record" : (err.message || "Duplicate");
   }
 
   // Persist error log (never throw)

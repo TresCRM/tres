@@ -1,5 +1,6 @@
 import { busPublish } from "./bus";
 import { EventEmitter } from "events";
+import { getTraceId } from "../observability/tracing";
 export const bus = new EventEmitter();
 
 // single point to fan-out events
@@ -7,7 +8,7 @@ export function emitTicketEvent(tenantId: string, payload: any) {
  try {
   bus.emit("ticket", payload);
   // NATS (if connected)
-  busPublish?.("ticket.events", { tenantId, ...payload });
+  busPublish?.("ticket.events", { tenantId, traceId: getTraceId(), ...payload });
   // WebSocket (if initialized)
   (global as any).notifyTicket?.(tenantId, payload.ticketId, payload);
  } catch (error) {

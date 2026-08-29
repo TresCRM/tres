@@ -14,7 +14,10 @@ export async function logError(req: Request, params: {
     http: params.http,
     method: req.method,
     path: req.originalUrl,
-    route: req.originalUrl || req.url || req.route || req.baseUrl || "",
+    // Never req.route here: it is an Express Route object, and ErrorLog.route is
+    // a string — the cast fails and the whole write throws, losing the very
+    // error we were trying to record.
+    route: req.originalUrl || req.url || req.baseUrl || "",
     requestId: (req.res?.locals?.requestId) || (req.headers["x-request-id"] as string) || (req.headers["idempotency-key"] as string),
     meta: params.meta,
     createdAt: new Date()

@@ -18,7 +18,7 @@ export function signAccessToken(payload: JWTPayload) {
 }
 
 export function signRefreshToken(payload: JWTPayload) {
-  return jwt.sign(payload, ENV.JWT_REFRESH_SECRET, { expiresIn: ENV.REFRESH_TOKEN_TTL_SECONDS });
+  return jwt.sign({ ...payload, jti: require("crypto").randomBytes(16).toString("hex") }, ENV.JWT_REFRESH_SECRET, { expiresIn: ENV.REFRESH_TOKEN_TTL_SECONDS });
 }
 
 export function verifyToken<T = JWTPayload>(token: string): T {

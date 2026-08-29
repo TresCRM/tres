@@ -1,0 +1,44 @@
+# NATS Helm chart values for TRES CRM
+# Deploy NATS with JetStream inside Kubernetes (replaces manual VM)
+# Usage: helm install nats nats/nats -f values.yaml
+
+nats:
+  jetstream:
+    enabled: true
+    memStorage:
+      enabled: true
+      size: 1Gi
+    fileStorage:
+      enabled: true
+      size: 10Gi
+      storageClassName: default
+
+  limits:
+    maxPayload: 8MB
+    maxConnections: 10000
+
+  logging:
+    debug: false
+    trace: false
+    logtime: true
+
+cluster:
+  enabled: false  # single node for staging, enable for production
+
+# Resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Monitoring
+prometheus:
+  enabled: true
+  port: 7777
+
+# Retention policies (applied via nats-box CLI or config)
+# Events: 7 day retention
+# DLQ: 30 day retention

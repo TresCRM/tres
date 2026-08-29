@@ -28,5 +28,10 @@ export async function errorHandler(err: any, req: Request, res: Response, _next:
     });
   } catch {/* ignored */}
 
-  _next();
+  // Forward the error, do not swallow it. Calling next() without an argument
+  // tells Express the error is handled and to resume ordinary middleware, so
+  // the JSON error handler mounted after this one never ran: unhandled errors
+  // came back as Express's default HTML page and were never written to
+  // ErrorLog. This middleware records activity; it does not terminate.
+  _next(err);
 }

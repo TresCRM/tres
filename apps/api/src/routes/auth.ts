@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { AuthRequest } from "../types/auth";
-import crypto from "crypto";
+import crypto, { timingSafeEqual } from "crypto";
+import { verifyTOTP } from "../utils/totp";
 import { Tenant } from "../models/Tenant";
 import { User } from "../models/User";
 import { hashPassword, verifyPassword, signAccessToken, signRefreshToken, hashToken, verifyRefreshToken, asObjectId } from "../utils/auth";
@@ -9,15 +10,58 @@ import { ENV } from "../config/env";
 import { RefreshToken } from "../models/RefreshToken";
 import { sanitizeUserHtml } from "../utils/sanitize";
 import { setAuthCookies, clearAuthCookies } from '../auth/cookies';
-import { sendVerificationEmail } from "../services/mailer";
+import { sendVerificationEmail, getMailer } from "../services/mailer";
 import { requireAuth } from "../middlewares/auth";
 import { registry } from "../docs/swagger";
 import { z } from "zod";
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
+import { logSecurityEvent } from "../services/securityLogger";
+import { MfaChallenge } from "../models/MfaChallenge";
 extendZodWithOpenApi(z);
 
+const PASSWORD_MAX_AGE_DAYS = ENV.PASSWORD_MAX_AGE_DAYS;
+
+/** How long a second-factor challenge stays valid. */
+const MFA_TICKET_TTL_MS = 5 * 60_000;
+/** Wrong codes tolerated per challenge before it is dropped. */
+const MFA_MAX_ATTEMPTS = 5;
+
+/** Only the digest is stored, so hash on the way in and on every lookup. */
+function hashTicket(ticket: string): string {
+  return crypto.createHash("sha256").update(ticket).digest("hex");
+}
+
+/**
+ * Fingerprint of the requesting client, used to pin an MFA ticket to it.
+ *
+ * The ticket is a bearer credential for the second factor: anything that leaks
+ * it (a proxy log, a shared screen, a referrer) otherwise completes MFA from
+ * anywhere within the 5-minute window. Hashed so neither the address nor the
+ * user agent is retained in memory in the clear.
+ */
+function clientBinding(req: any): string {
+  const ip = req.ip || "";
+  const ua = (req.headers["user-agent"] as string) || "";
+  // JSON-encode the pair so the two fields cannot be shifted into one
+  // another to forge a matching fingerprint.
+  return crypto.createHash("sha256").update(JSON.stringify([ip, ua])).digest("hex");
+}
 export const authRouter = Router();
 const DISABLED = ENV.EMAILS_DISABLED;
+
+// ─── Email verification helpers ─────────────────────
+
+const VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24;   // 24 hours
+const MAX_VERIFY_ATTEMPTS = 5;                       // failed attempts before lockout
+const VERIFY_LOCKOUT_MS = 1000 * 60 * 15;            // 15-min cooldown after max attempts
+
+/** Generate a new verification token + 6-digit code pair. */
+function generateVerificationPair() {
+  const token = crypto.randomBytes(24).toString("hex");
+  // 6-digit code, zero-padded
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+  return { token, code, expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS) };
+}
 
 /** POST /api/v1/auth/signup */
 authRouter.post("/signup", async (req, res) => {
@@ -25,6 +69,10 @@ authRouter.post("/signup", async (req, res) => {
     const { tenant, owner, branding } = SignupSchema.parse(req.body);
     const exists = await Tenant.findOne({ slug: tenant.slug });
     if (exists) return res.status(409).json({ error: "tenant_slug_taken" });
+
+    // Enforce one-tenant-per-owner: this email must not already own a tenant.
+    const existingOwner = await User.findOne({ email: owner.email, roles: "OWNER" }).lean();
+    if (existingOwner) return res.status(409).json({ error: "email_already_exists" });
 
     const newTenant = await Tenant.create({
       slug: tenant.slug.toLowerCase(),
@@ -39,7 +87,7 @@ authRouter.post("/signup", async (req, res) => {
       }
     });
 
-    const token = crypto.randomBytes(24).toString("hex");
+    const { token, code, expiresAt } = generateVerificationPair();
     const passwordHash = await hashPassword(owner.password);
 
     const user = await User.create({
@@ -52,41 +100,136 @@ authRouter.post("/signup", async (req, res) => {
       status: "PENDING",
       emailVerification: {
         token,
-        expiresAt: new Date(Date.now() + 1000*60*60*24) // 24h
+        code,
+        expiresAt,
+        attempts: 0,
+        lockedUntil: null,
       }
     });
 
     if(!DISABLED){
-      await sendVerificationEmail(owner.email, newTenant.slug, token, newTenant.branding.emailFrom);
+      await sendVerificationEmail(owner.email, newTenant.slug, token, code, newTenant.branding.emailFrom);
     }
     return res.status(201).json({
       tenant: { id: newTenant._id, slug: newTenant.slug, name: newTenant.branding.name },
       owner: { id: user._id, email: user.email, status: user.status }
     });
   } catch (e:any) {
+    // MongoDB duplicate-key race (partial unique index on OWNER email)
+    if (e?.code === 11000 && e?.keyPattern?.email) {
+      return res.status(409).json({ error: "email_already_exists" });
+    }
     return res.status(400).json({ error: "invalid_request", details: e.message });
   }
 });
 
-/** POST /api/v1/auth/verify */
+/**
+ * POST /api/v1/auth/verify
+ *
+ * Accepts EITHER:
+ *  - `token` (48-char hex) — magic link flow
+ *  - `code` (6-digit numeric) — manual entry flow
+ * At least one must be provided.
+ *
+ * Tracks failed attempts and locks the account for 15 minutes after 5 failures.
+ */
+const VerifyBody = z.object({
+  email: z.string().email(),
+  tenantSlug: z.string().min(1),
+  token: z.string().min(10).optional(),
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits").optional(),
+}).refine(
+  (data) => !!data.token || !!data.code,
+  { message: "Either token or code is required" }
+);
+
 authRouter.post("/verify", async (req, res) => {
   try {
-    const { email, tenantSlug, token } = VerifySchema.parse(req.body);
-    const tenant = await Tenant.findOne({ slug: tenantSlug.toLowerCase() });
+    const body = VerifyBody.parse(req.body);
+
+    const tenant = await Tenant.findOne({ slug: body.tenantSlug.toLowerCase() });
     if (!tenant) return res.status(404).json({ error: "tenant_not_found" });
 
-    const user = await User.findOne({ tenantId: tenant._id, email: email.toLowerCase() });
-    if (!user || !user.emailVerification) return res.status(400).json({ error: "no_token" });
-    if (user.emailVerification.token !== token) return res.status(400).json({ error: "bad_token" });
-    if (user.emailVerification.expiresAt.getTime() < Date.now()) return res.status(400).json({ error: "expired_token" });
+    const user = await User.findOne({ tenantId: tenant._id, email: body.email.toLowerCase() });
+    if (!user || !user.emailVerification) return res.status(400).json({ error: "no_verification" });
 
+    // Already verified — idempotent success
+    if (user.status === "ACTIVE" && user.emailVerification.verifiedAt) {
+      return res.json({ ok: true, alreadyVerified: true });
+    }
+
+    const ev = user.emailVerification;
+
+    // Check cooldown lock (too many failed attempts)
+    if (ev.lockedUntil && ev.lockedUntil.getTime() > Date.now()) {
+      const remainingMs = ev.lockedUntil.getTime() - Date.now();
+      return res.status(429).json({
+        error: "too_many_attempts",
+        message: "Too many failed attempts. Please wait before trying again or request a new code.",
+        retryAfterSeconds: Math.ceil(remainingMs / 1000),
+      });
+    }
+
+    // Check expiration
+    if (ev.expiresAt.getTime() < Date.now()) {
+      return res.status(400).json({ error: "expired", message: "Verification code/link has expired. Please request a new one." });
+    }
+
+    // Validate token OR code — prefer token if both provided
+    let valid = false;
+    if (body.token) {
+      valid = ev.token.length === body.token.length &&
+        timingSafeEqual(Buffer.from(ev.token), Buffer.from(body.token));
+    } else if (body.code) {
+      valid = ev.code.length === body.code.length &&
+        timingSafeEqual(Buffer.from(ev.code), Buffer.from(body.code));
+    }
+
+    if (!valid) {
+      // Increment attempt counter, lock if threshold reached
+      ev.attempts = (ev.attempts || 0) + 1;
+      const remainingAttempts = Math.max(0, MAX_VERIFY_ATTEMPTS - ev.attempts);
+
+      if (ev.attempts >= MAX_VERIFY_ATTEMPTS) {
+        ev.lockedUntil = new Date(Date.now() + VERIFY_LOCKOUT_MS);
+        await user.save();
+        try {
+          logSecurityEvent({
+            event: "auth.login.locked",
+            tenantId: String(tenant._id),
+            userId: String(user._id),
+            email: user.email,
+            metadata: { reason: "email_verification_max_attempts", attempts: ev.attempts },
+          });
+        } catch {}
+        return res.status(429).json({
+          error: "too_many_attempts",
+          message: "Too many failed attempts. Account locked for 15 minutes. Request a new code to retry.",
+          retryAfterSeconds: Math.ceil(VERIFY_LOCKOUT_MS / 1000),
+        });
+      }
+
+      await user.save();
+      return res.status(400).json({
+        error: body.code ? "bad_code" : "bad_token",
+        message: body.code ? "Invalid verification code" : "Invalid verification token",
+        remainingAttempts,
+      });
+    }
+
+    // SUCCESS — activate user, clear attempt counters
     user.status = "ACTIVE";
-    user.emailVerification.verifiedAt = new Date();
+    ev.verifiedAt = new Date();
+    ev.attempts = 0;
+    ev.lockedUntil = null;
     await user.save();
 
     return res.json({ ok: true });
   } catch (e:any) {
-    return res.status(400).json({ error: "invalid_request", details: e.message });
+    if (e.name === "ZodError") {
+      return res.status(400).json({ error: "invalid_request", details: e.issues });
+    }
+    return res.status(500).json({ error: "internal_error" });
   }
 });
 
@@ -105,16 +248,20 @@ authRouter.post("/resend", async (req, res) => {
     if (!user) return res.status(404).json({ error: "user_not_found" });
     if (user.status === "ACTIVE") return res.status(400).json({ error: "already_verified" });
 
-    const token = crypto.randomBytes(24).toString("hex");
+    // Generate a fresh pair (resets attempts and lockout)
+    const { token, code, expiresAt } = generateVerificationPair();
     user.emailVerification = {
       token,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+      code,
+      expiresAt,
       verifiedAt: undefined,
+      attempts: 0,
+      lockedUntil: null,
     };
     await user.save();
 
     if (!DISABLED) {
-      await sendVerificationEmail(user.email, tenant.slug, token, tenant.branding?.emailFrom);
+      await sendVerificationEmail(user.email, tenant.slug, token, code, tenant.branding?.emailFrom);
     }
     return res.status(200).json({ ok: true });
   } catch (e:any) {
@@ -122,6 +269,40 @@ authRouter.post("/resend", async (req, res) => {
   }
 });
 
+
+/** Helper: complete login (issue tokens, set cookies) */
+async function completeLogin(req: any, res: any, user: any, tenant: any) {
+  const payload = { sub: String(user._id), tid: String(tenant._id), roles: user.roles };
+  const accessToken = signAccessToken(payload);
+  const refreshToken = signRefreshToken(payload);
+  setAuthCookies(res, { accessToken, refreshToken, role: user.roles[0] });
+  await RefreshToken.create({
+    userId: user._id,
+    tenantId: tenant._id,
+    tokenHash: hashToken(refreshToken),
+    ip: req.ip,
+    deviceInfo: req.headers["user-agent"],
+    expiresAt: new Date(Date.now() + ENV.REFRESH_TOKEN_TTL_SECONDS * 1000),
+  });
+
+  // Check password expiry
+  const passwordExpired = PASSWORD_MAX_AGE_DAYS > 0 && user.passwordChangedAt
+    ? (Date.now() - user.passwordChangedAt.getTime()) > PASSWORD_MAX_AGE_DAYS * 86_400_000
+    : false;
+
+  // Privileged roles must have MFA enabled
+  const PRIVILEGED_ROLES = ["OWNER", "ADMIN"];
+  const mfaSetupRequired = user.roles.some((r: string) => PRIVILEGED_ROLES.includes(r)) && !user.mfa?.enabled;
+
+  return res.json({
+    accessToken,
+    refreshToken,
+    user: { id: user._id, email: user.email, roles: user.roles },
+    tenant: { id: tenant._id, slug: tenant.slug },
+    passwordExpired,
+    mfaSetupRequired,
+  });
+}
 
 /** POST /api/v1/auth/login */
 authRouter.post("/login", async (req, res) => {
@@ -134,8 +315,11 @@ authRouter.post("/login", async (req, res) => {
     if (!user) return res.status(401).json({ error: "bad_credentials" });
     if (user.status !== "ACTIVE") return res.status(403).json({ error: "user_not_active" });
 
+    const secCtx = { tenantId: String(tenant._id), userId: String(user._id), email: email, ip: req.ip, userAgent: req.headers["user-agent"] as string };
+
     // Account lockout check
     if (user.lockUntil && user.lockUntil > new Date()) {
+      logSecurityEvent({ event: "auth.login.locked", ...secCtx });
       return res.status(423).json({ error: "account_locked", message: "Account temporarily locked. Try again later." });
     }
 
@@ -147,6 +331,7 @@ authRouter.post("/login", async (req, res) => {
         update.lockUntil = new Date(Date.now() + ENV.ACCOUNT_LOCKOUT_MINUTES * 60_000);
       }
       await User.updateOne({ _id: user._id }, update);
+      logSecurityEvent({ event: "auth.login.failed", ...secCtx, metadata: { attempts } });
       return res.status(401).json({ error: "bad_credentials" });
     }
 
@@ -154,25 +339,245 @@ authRouter.post("/login", async (req, res) => {
       await User.updateOne({ _id: user._id }, { failedLoginAttempts: 0, lockUntil: null });
     }
 
-    const payload = { sub: String(user._id), tid: String(tenant._id), roles: user.roles };
-    const accessToken = signAccessToken(payload);
-    const refreshToken = signRefreshToken(payload);
-    setAuthCookies(res, { accessToken, refreshToken, role: user.roles[0] });
-    await RefreshToken.create({
-      userId: user._id,
-      tenantId: tenant._id,
-      tokenHash: hashToken(refreshToken),
-      ip: req.ip,
-      deviceInfo: req.headers["user-agent"],
-      expiresAt: new Date(Date.now() + ENV.REFRESH_TOKEN_TTL_SECONDS * 1000),
-    });
-    return res.json({ accessToken, refreshToken, user: { id: user._id, email: user.email, roles: user.roles }, tenant: { id: tenant._id, slug: tenant.slug } });
+    // If MFA is enabled, return challenge instead of tokens
+    if (user.mfa?.enabled) {
+      const ticket = crypto.randomBytes(32).toString("hex");
+      await MfaChallenge.create({
+        ticketHash: hashTicket(ticket),
+        userId: user._id,
+        tenantId: tenant._id,
+        email: user.email,
+        clientBinding: clientBinding(req),
+        expiresAt: new Date(Date.now() + MFA_TICKET_TTL_MS),
+      });
+      logSecurityEvent({ event: "auth.mfa.challenge", ...secCtx });
+      return res.json({ mfaRequired: true, mfaTicket: ticket });
+    }
+
+    logSecurityEvent({ event: "auth.login.success", ...secCtx });
+    return completeLogin(req, res, user, tenant);
   } catch (e:any) {
     return res.status(400).json({ error: "invalid_request", details: e.message });
   }
 });
 
-/** POST /api/v1/auth/refresh */
+/** POST /api/v1/auth/mfa-verify — complete login with TOTP code */
+authRouter.post("/mfa-verify", async (req, res) => {
+  try {
+    const { mfaTicket, code } = z.object({
+      mfaTicket: z.string().min(1),
+      code: z.string().min(1),
+    }).parse(req.body);
+
+    const ticketHash = hashTicket(mfaTicket);
+    const pending = await MfaChallenge.findOne({ ticketHash });
+    // Mongo's TTL sweeper is periodic, so an expired challenge can still be
+    // present — the timestamp is the authority, not the document's existence.
+    if (!pending || pending.expiresAt.getTime() < Date.now()) {
+      if (pending) await MfaChallenge.deleteOne({ ticketHash });
+      return res.status(401).json({ error: "mfa_expired", message: "MFA session expired. Please sign in again." });
+    }
+
+    const secCtxMfa = {
+      userId: String(pending.userId),
+      tenantId: String(pending.tenantId),
+      email: pending.email,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"] as string,
+    };
+
+    // The ticket only works from the client that asked for it. Burn it on
+    // mismatch so a leaked ticket cannot be retried from elsewhere.
+    if (pending.clientBinding !== clientBinding(req)) {
+      await MfaChallenge.deleteOne({ ticketHash });
+      logSecurityEvent({
+        event: "auth.mfa.failed",
+        ...secCtxMfa,
+        metadata: { reason: "client_binding_mismatch" },
+      });
+      return res.status(401).json({ error: "mfa_invalid", message: "MFA session is not valid for this client." });
+    }
+
+    const user = await User.findById(pending.userId);
+    if (!user || !user.mfa?.enabled) {
+      await MfaChallenge.deleteOne({ ticketHash });
+      return res.status(401).json({ error: "bad_credentials" });
+    }
+
+    // Try TOTP
+    let valid = verifyTOTP(code, user.mfa.secret);
+
+    // Try recovery code
+    if (!valid) {
+      const codeHash = crypto.createHash("sha256").update(code.toUpperCase()).digest("hex");
+      const idx = user.mfa.recoveryCodes.indexOf(codeHash);
+      if (idx !== -1) {
+        valid = true;
+        user.mfa.recoveryCodes.splice(idx, 1);
+        await user.save();
+      }
+    }
+
+    if (!valid) {
+      // A wrong code leaves the challenge usable so a typo does not force a new
+      // login, but not indefinitely: six digits are brute-forceable inside the
+      // five-minute window without a cap.
+      const attempts = pending.attempts + 1;
+      if (attempts >= MFA_MAX_ATTEMPTS) {
+        await MfaChallenge.deleteOne({ ticketHash });
+        logSecurityEvent({
+          event: "auth.mfa.failed",
+          ...secCtxMfa,
+          metadata: { reason: "max_attempts_exceeded", attempts },
+        });
+        return res.status(401).json({ error: "mfa_expired", message: "Too many incorrect codes. Please sign in again." });
+      }
+
+      await MfaChallenge.updateOne({ ticketHash }, { $set: { attempts } });
+      logSecurityEvent({ event: "auth.mfa.failed", ...secCtxMfa, metadata: { attempts } });
+      return res.status(401).json({ error: "invalid_mfa_code" });
+    }
+
+    await MfaChallenge.deleteOne({ ticketHash });
+    logSecurityEvent({ event: "auth.mfa.success", ...secCtxMfa });
+
+    const tenant = await Tenant.findById(pending.tenantId);
+    if (!tenant) return res.status(404).json({ error: "tenant_not_found" });
+
+    return completeLogin(req, res, user, tenant);
+  } catch (e: any) {
+    return res.status(400).json({ error: "invalid_request", details: e.message });
+  }
+});
+
+/** POST /api/v1/auth/change-password */
+authRouter.post("/change-password", requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(ENV.PASSWORD_MIN_LENGTH)
+        .regex(/[A-Z]/, "Must contain uppercase")
+        .regex(/[a-z]/, "Must contain lowercase")
+        .regex(/[0-9]/, "Must contain digit"),
+    }).parse(req.body);
+
+    const auth = (req as AuthRequest).auth;
+    const user = await User.findById(asObjectId(auth.sub));
+    if (!user) return res.status(404).json({ error: "user_not_found" });
+
+    const ok = await verifyPassword(currentPassword, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "bad_credentials" });
+
+    user.passwordHash = await hashPassword(newPassword);
+    user.passwordChangedAt = new Date();
+    await user.save();
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request", details: e.issues });
+    return res.status(400).json({ error: "invalid_request" });
+  }
+});
+
+/** POST /api/v1/auth/forgot-password — send password reset email */
+authRouter.post("/forgot-password", async (req, res) => {
+  try {
+    const { email, tenantSlug } = z.object({
+      email: z.string().email(),
+      tenantSlug: z.string().min(1),
+    }).parse(req.body);
+
+    // Always return 200 to prevent email enumeration
+    const tenant = await Tenant.findOne({ slug: tenantSlug.toLowerCase(), isActive: true });
+    if (!tenant) return res.json({ ok: true });
+
+    const user = await User.findOne({ tenantId: tenant._id, email: email.toLowerCase(), status: "ACTIVE" });
+    if (!user) return res.json({ ok: true });
+
+    // Generate reset token (48 bytes = 96 hex chars)
+    const resetToken = crypto.randomBytes(48).toString("hex");
+    const resetHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+    user.passwordReset = {
+      token: resetHash,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+    };
+    await user.save();
+
+    const resetUrl = `${ENV.FRONTEND_ORIGIN}/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}&tenant=${encodeURIComponent(tenantSlug)}`;
+
+    if (!DISABLED) {
+      try {
+        await getMailer().sendMail({
+          from: tenant.branding?.emailFrom || ENV.FROM_EMAIL,
+          to: email,
+          subject: "Reset your TRES CRM password",
+          html: `<p>You requested a password reset.</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in 1 hour. If you didn't request this, ignore this email.</p>`,
+          text: `Reset your password: ${resetUrl}\nExpires in 1 hour.`,
+        });
+      } catch (e: any) {
+        console.error("[mail] password reset send failed", {
+          provider: process.env.SMTP_PROVIDER || "default",
+          to: email,
+          code: e?.code,
+          command: e?.command,
+          response: e?.response,
+          message: e?.message,
+        });
+        if (process.env.EMAIL_STRICT === "1") throw e;
+      }
+    }
+
+    logSecurityEvent({ event: "auth.password_reset.requested", tenantId: String(tenant._id), userId: String(user._id), email, ip: req.ip, userAgent: req.headers["user-agent"] as string });
+    return res.json({ ok: true });
+  } catch (e: any) {
+    return res.status(400).json({ error: "invalid_request", details: e.message });
+  }
+});
+
+/** POST /api/v1/auth/reset-password — verify token and set new password */
+authRouter.post("/reset-password", async (req, res) => {
+  try {
+    const { token, email, tenantSlug, newPassword } = z.object({
+      token: z.string().min(1),
+      email: z.string().email(),
+      tenantSlug: z.string().min(1),
+      newPassword: z.string()
+        .min(ENV.PASSWORD_MIN_LENGTH, `Password must be at least ${ENV.PASSWORD_MIN_LENGTH} characters`)
+        .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+        .regex(/[a-z]/, "Must contain at least one lowercase letter")
+        .regex(/[0-9]/, "Must contain at least one digit"),
+    }).parse(req.body);
+
+    const tenant = await Tenant.findOne({ slug: tenantSlug.toLowerCase(), isActive: true });
+    if (!tenant) return res.status(400).json({ error: "invalid_reset_token" });
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const user = await User.findOne({
+      tenantId: tenant._id,
+      email: email.toLowerCase(),
+      "passwordReset.token": tokenHash,
+      "passwordReset.expiresAt": { $gt: new Date() },
+    });
+
+    if (!user) return res.status(400).json({ error: "invalid_reset_token", message: "Reset link is invalid or has expired." });
+
+    user.passwordHash = await hashPassword(newPassword);
+    user.passwordChangedAt = new Date();
+    user.passwordReset = undefined as any;
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+    await user.save();
+
+    logSecurityEvent({ event: "auth.password_reset.completed", tenantId: String(tenant._id), userId: String(user._id), email, ip: req.ip, userAgent: req.headers["user-agent"] as string });
+    return res.json({ ok: true });
+  } catch (e: any) {
+    if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request", details: e.issues });
+    return res.status(400).json({ error: "invalid_request", details: e.message });
+  }
+});
+
+/** POST /api/v1/auth/refresh — with token rotation */
 authRouter.post("/refresh", async (req, res) => {
   const token = req.cookies?.tc_refresh || (req.headers.authorization ?? "").replace("Bearer ", "");
   if (!token) {
@@ -181,18 +586,57 @@ authRouter.post("/refresh", async (req, res) => {
   }
   try {
     const payload = verifyRefreshToken(token);
-    // Verify token exists in DB and is not revoked
-    const stored = await RefreshToken.findOne({ tokenHash: hashToken(token), revokedAt: null });
+    const oldHash = hashToken(token);
+    const stored = await RefreshToken.findOne({ tokenHash: oldHash, revokedAt: null });
     if (!stored) {
+      // Stolen token reuse detection: if the token was already rotated,
+      // revoke the entire family to protect the user
+      const rotated = await RefreshToken.findOne({ tokenHash: oldHash });
+      if (rotated?.replacedByHash) {
+        logSecurityEvent({ event: "auth.token.stolen", userId: String(rotated.userId), tenantId: String(rotated.tenantId), ip: req.ip, userAgent: req.headers["user-agent"] as string });
+        await RefreshToken.updateMany(
+          { userId: rotated.userId, revokedAt: null },
+          { revokedAt: new Date() }
+        );
+      }
       clearAuthCookies(res);
       return res.status(401).json({ error: "invalid_refresh" });
     }
+
+    // Device binding: detect IP/UA drift
+    const currentIp = req.ip || "";
+    const currentUa = (req.headers["user-agent"] || "").slice(0, 100);
+    const storedIp = stored.ip || "";
+    const storedUa = (stored.deviceInfo || "").slice(0, 100);
+    const ipChanged = storedIp && currentIp && storedIp !== currentIp;
+    const uaChanged = storedUa && currentUa && storedUa !== currentUa;
+    // If BOTH IP and UA changed simultaneously, treat as suspicious
+    if (ipChanged && uaChanged) {
+      logSecurityEvent({ event: "auth.token.stolen", userId: String(stored.userId), tenantId: String(stored.tenantId), ip: currentIp, userAgent: currentUa, metadata: { reason: "ip_ua_drift", oldIp: storedIp, newIp: currentIp } });
+      await RefreshToken.updateMany({ userId: stored.userId, revokedAt: null }, { revokedAt: new Date() });
+      clearAuthCookies(res);
+      return res.status(401).json({ error: "session_invalidated", message: "Session invalidated due to suspicious activity. Please sign in again." });
+    }
+
+    // Issue new tokens (rotation)
     const accessToken = signAccessToken({ sub: payload.sub, tid: payload.tid, roles: payload.roles });
-    setAuthCookies(res, {
-      accessToken,
-      refreshToken: token,
-      role: payload.roles[0] as any,
+    const newRefreshToken = signRefreshToken({ sub: payload.sub, tid: payload.tid, roles: payload.roles });
+    const newHash = hashToken(newRefreshToken);
+
+    // Revoke old, link to new
+    await RefreshToken.updateOne({ _id: stored._id }, { revokedAt: new Date(), replacedByHash: newHash });
+
+    // Create new session record
+    await RefreshToken.create({
+      userId: stored.userId,
+      tenantId: stored.tenantId,
+      tokenHash: newHash,
+      ip: req.ip,
+      deviceInfo: req.headers["user-agent"],
+      expiresAt: new Date(Date.now() + ENV.REFRESH_TOKEN_TTL_SECONDS * 1000),
     });
+
+    setAuthCookies(res, { accessToken, refreshToken: newRefreshToken, role: payload.roles[0] as any });
     return res.json({ accessToken });
   } catch {
     clearAuthCookies(res);
@@ -203,7 +647,47 @@ authRouter.post("/refresh", async (req, res) => {
 /** GET /api/v1/auth/me */
 authRouter.get("/me", requireAuth, async (req, res) => {
   const auth = (req as AuthRequest).auth;
-  return res.json(auth);
+  let user: any = null;
+  try { user = await User.findById(asObjectId(auth.sub)).select("firstName lastName email mfa.enabled").lean(); } catch {}
+  const PRIVILEGED_ROLES = ["OWNER", "ADMIN"];
+  const mfaEnabled = !!user?.mfa?.enabled;
+  const mfaSetupRequired = auth.roles.some((r: string) => PRIVILEGED_ROLES.includes(r)) && !mfaEnabled;
+  return res.json({
+    ...auth,
+    firstName: user?.firstName || "",
+    lastName: user?.lastName || "",
+    email: user?.email || "",
+    mfaEnabled,
+    mfaSetupRequired,
+  });
+});
+
+/** PUT /api/v1/auth/profile — update own profile (name) */
+authRouter.put("/profile", requireAuth, async (req, res) => {
+  try {
+    const auth = (req as AuthRequest).auth;
+    const body = z.object({
+      firstName: z.string().trim().min(1, "First name required").optional(),
+      lastName: z.string().trim().min(1, "Last name required").optional(),
+    }).parse(req.body);
+
+    if (!body.firstName && !body.lastName) {
+      return res.status(400).json({ error: "invalid_request", details: "Nothing to update" });
+    }
+
+    const update: Record<string, string> = {};
+    if (body.firstName) update.firstName = body.firstName;
+    if (body.lastName) update.lastName = body.lastName;
+
+    const user = await User.findByIdAndUpdate(asObjectId(auth.sub), update, { new: true })
+      .select("firstName lastName email roles status");
+    if (!user) return res.status(404).json({ error: "user_not_found" });
+
+    return res.json({ data: { id: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email } });
+  } catch (e: any) {
+    if (e.name === "ZodError") return res.status(400).json({ error: "invalid_request", details: e.issues });
+    return res.status(400).json({ error: "invalid_request", details: e.message });
+  }
 });
 
 authRouter.post('/logout', requireAuth, async (req, res) => {

@@ -215,7 +215,7 @@ describe("isValidRole", () => {
 
   test("rejects removed/invalid roles", () => {
     expect(isValidRole("SUPER")).toBe(false);
-    expect(isValidRole("SPECIAL")).toBe(false);
+    expect(isValidRole("FAKE_ROLE")).toBe(false);
     expect(isValidRole("HACKER")).toBe(false);
     expect(isValidRole("")).toBe(false);
   });
@@ -226,7 +226,7 @@ describe("isValidRole", () => {
     const badToken = signAccessToken({
       sub: "fakeid",
       tid: String(tenant._id),
-      roles: ["OWNER", "SUPER", "SPECIAL", "HACKER"] as any,
+      roles: ["OWNER", "SUPER", "FAKE_ROLE", "HACKER"] as any,
     });
     const res = await request(app)
       .get("/api/v1/auth/me")
@@ -235,7 +235,7 @@ describe("isValidRole", () => {
     // Only valid roles should be in the payload
     expect(res.body.roles).toEqual(["OWNER"]);
     expect(res.body.roles).not.toContain("SUPER");
-    expect(res.body.roles).not.toContain("SPECIAL");
+    expect(res.body.roles).not.toContain("FAKE_ROLE");
     expect(res.body.roles).not.toContain("HACKER");
   });
 });
@@ -385,7 +385,7 @@ describe("CUSTOMER role -- Public ticket endpoints (Phase 2.4)", () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.data.ticketId).toBeTruthy();
-    expect(res.body.data.status).toBe("ACTIVE");
+    expect(res.body.data.status).toBe("OPEN");
     expect(res.body.data.trackingUrl).toBeTruthy(); // exposed in test mode
     ticketId = res.body.data.ticketId;
 
@@ -400,7 +400,7 @@ describe("CUSTOMER role -- Public ticket endpoints (Phase 2.4)", () => {
       .get(`/public/tickets/${ticketId}?token=${encodeURIComponent(trackingToken)}`);
     expect(res.status).toBe(200);
     expect(res.body.data.subject).toBe("I need help");
-    expect(res.body.data.status).toBe("ACTIVE");
+    expect(res.body.data.status).toBe("OPEN");
     expect(res.body.data.comments).toBeDefined();
   });
 

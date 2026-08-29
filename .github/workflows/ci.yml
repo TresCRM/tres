@@ -1,22 +1,9 @@
-name: CI (Test + Coverage + OpenAPI)
+name: CI
 
 on:
   push:
-    branches: ["**"]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "jest.config.ts"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/ci.yml"
+    branches: [main]
   pull_request:
-    branches: ["**"]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "jest.config.ts"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/ci.yml"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -26,71 +13,246 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Unit/Int/E2E + Coverage
+  lint-and-typecheck:
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: false
+
+      - name: Typecheck
+        run: pnpm typecheck
+        continue-on-error: false
+
+  test-api:
+    name: API Tests
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
+      MONGO_URI: mongodb://localhost:27017/trescrm_ci
       JWT_SECRET: ci-test-secret
       SURVEY_JWT_SECRET: ci-survey-secret
-      MONGO_URI: mongodb://localhost:27017/trescrm_ci
       SMTP_DEFAULT_HOST: localhost
       SMTP_DEFAULT_PORT: "1025"
       SMTP_DEFAULT_SECURE: "false"
       EMAILS_DISABLED: "1"
       DISABLE_RATE_LIMIT: "1"
-      USE_MEMORY_MONGO: "1"
       EVENTS_URL: ""
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # pnpm MUST be set up BEFORE actions/setup-node so the cache works
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        # version is read from package.json "packageManager" field automatically
+      - uses: pnpm/action-setup@v4
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "pnpm"
+          cache: pnpm
 
-      - name: Show tool versions
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run API tests
+        run: pnpm test
+        working-directory: .
+
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build web app
+        run: pnpm --filter web build
+
+      - name: Bundle size check
         run: |
-          node -v
-          pnpm -v
+          SIZE=$(du -sm apps/web/.next | cut -f1)
+          echo "Web bundle size: ${SIZE}MB"
+          if [ "$SIZE" -gt 200 ]; then
+            echo "::warning::Web bundle size (${SIZE}MB) exceeds 200MB threshold"
+          fi
 
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
+  openapi-validation:
+    name: OpenAPI Spec Validation
+    runs-on: ubuntu-latest
+    env:
+      # docs:gen imports src/config/env, which requires these at load time.
+      # No DB connection is opened during generation — placeholders are fine.
+      NODE_ENV: test
+      MONGO_URI: mongodb://localhost:27017/openapi_gen
+      JWT_SECRET: openapi-gen-secret
+      SURVEY_JWT_SECRET: openapi-gen-survey
+      SMTP_DEFAULT_HOST: localhost
+      SMTP_DEFAULT_PORT: "1025"
+      SMTP_DEFAULT_SECURE: "false"
+      EMAILS_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Run tests (all)
-        run: |
-          npx jest --passWithNoTests --runInBand --no-coverage --forceExit
+      - uses: pnpm/action-setup@v4
 
-      - name: Coverage (text + lcov)
-        run: |
-          npx jest --passWithNoTests --runInBand --forceExit --coverage --coverageReporters=text-summary,lcov
-        continue-on-error: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
 
-      - name: Upload coverage artifact
+      - run: pnpm install --frozen-lockfile
+
+      - name: Validate OpenAPI spec generation
+        run: pnpm docs:gen
+
+  widget-e2e:
+    name: Widget E2E (Chromium/Firefox/WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Cache the browser binaries; they are ~350MB across the three engines and
+      # do not change between runs unless Playwright itself is upgraded.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      # System libraries are not part of the cached browser payload.
+      - name: Install browser system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium firefox webkit
+
+      - name: Run widget E2E
+        run: pnpm exec playwright test
+
+      - name: Upload report on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-lcov
-          path: coverage/lcov.info
-          if-no-files-found: warn
+          name: playwright-report
+          path: playwright-report/
           retention-days: 7
 
-      - name: Generate OpenAPI
-        run: pnpm docs:gen
-        continue-on-error: true
+  app-e2e:
+    name: App E2E (auth + console)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Upload OpenAPI artifact
-        uses: actions/upload-artifact@v4
-        if: success()
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
         with:
-          name: openapi.json
-          path: apps/api/openapi.json
-          if-no-files-found: warn
-          retention-days: 14
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      # This suite runs Chromium only — it drives an internal console, not
+      # third-party pages. The widget suite is the one that needs three engines.
+      - name: Install Playwright chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install browser system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      # The suite boots the real API against an ephemeral MongoDB and the Next
+      # dev server; both are started by Playwright's webServer.
+      - name: Run app E2E
+        run: pnpm exec playwright test --config=playwright.app.config.ts
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-app-report
+          path: playwright-report/
+          retention-days: 7
+
+  docker-build:
+    name: Docker Build (no push)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            file: apps/api/Dockerfile
+          - service: web
+            file: Dockerfile.web
+          - service: workers
+            file: Dockerfile.workers
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: false
+          tags: tres-crm/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

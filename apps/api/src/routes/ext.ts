@@ -47,8 +47,8 @@ const CommentBody = z.object({
 const ListQuery = z.object({
   limit: z.coerce.number().min(1).max(200).default(50),
   cursor: z.string().optional(),
-  status: z.enum(["ACTIVE", "CLOSED", "REOPENED"]).optional(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  status: z.enum(["OPEN", "ASSIGNED", "IN_PROGRESS", "AWAITING_CUSTOMER", "TRANSFERRED", "RESOLVED", "CLOSED", "REOPENED"]).optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
   customerEmail: z.string().optional(),
   externalId: z.string().optional(),
 });

@@ -1,49 +1,81 @@
 'use client';
 
-import { Formik, Form } from 'formik';
-import { z } from 'zod';
-import Input from '@/components/forms/Input';
-import { zodToFormikValidate } from '@/lib/zodFormik';
-import ImageKitUploader from '@/components/forms/ImageKitUploader';
-import api from '@/lib/api';
-import { Button } from '@/components/ui/Button';
+import { useBranding, useUpdateBranding } from '@/hooks/useApi';
+import { useForm } from 'react-hook-form';
+import { useEffect } from 'react';
+import { normalizeFormData, hexColorRules, urlRules, emailRules } from '@/lib/validation';
+import { Loader2 } from 'lucide-react';
 
-const schema = z.object({
-  primary: z.string().regex(/^#([0-9a-f]{3}){1,2}$/i, 'Hex color'),
-  appName: z.string().min(2),
-  logoUrl: z.url().optional(),
-});
+export default function BrandingPage() {
+  const { data, isLoading } = useBranding();
+  const updateMutation = useUpdateBranding();
 
-export default function Branding() {
+  const { register, handleSubmit, reset, formState: { errors, isDirty } } = useForm<{
+    name: string; primaryColor: string; surfaceColor: string; logoUrl: string; emailFrom: string;
+  }>();
+
+  useEffect(() => {
+    if (data?.branding) {
+      reset({
+        name: data.branding.name || '',
+        primaryColor: data.branding.primaryColor || '#4F46E5',
+        surfaceColor: data.branding.surfaceColor || '#F3F4F6',
+        logoUrl: data.branding.logoUrl || '',
+        emailFrom: data.branding.emailFrom || '',
+      });
+    }
+  }, [data, reset]);
+
+  const onSubmit = async (formData: any) => {
+    const changes: any = {};
+    if (formData.name) changes.name = formData.name;
+    if (formData.primaryColor) changes.primaryColor = formData.primaryColor;
+    if (formData.surfaceColor) changes.surfaceColor = formData.surfaceColor;
+    if (formData.logoUrl) changes.logoUrl = formData.logoUrl;
+    if (formData.emailFrom) changes.emailFrom = formData.emailFrom;
+    await updateMutation.mutateAsync(normalizeFormData(changes, ['emailFrom']));
+  };
+
+  if (isLoading) return <p className="text-gray-500">Loading...</p>;
+
   return (
-    <div className="max-w-xl">
-      <h2 className="text-xl font-semibold mb-4">Branding</h2>
-      <Formik
-        initialValues={{ primary:'#1a73e8', appName:'TRES CRM', logoUrl:'' }}
-        validate={zodToFormikValidate(schema)}
-        onSubmit={async (values, { setSubmitting }) => {
-          // Save to API → tenants.branding
-          await api.put('/tenants/me/branding', values);
-          // Apply CSS var immediately
-          document.documentElement.style.setProperty('--brand-primary',
-            `${parseInt(values.primary.slice(1,3),16)} ${parseInt(values.primary.slice(3,5),16)} ${parseInt(values.primary.slice(5,7),16)}`
-          );
-          setSubmitting(false);
-        }}
-      >
-        {({ values, setFieldValue, isSubmitting }) => (
-          <Form className="space-y-4">
-            <Input name="appName" label="App display name" placeholder="Acme Support" />
-            <Input name="primary" label="Primary color (hex)" placeholder="#1a73e8" />
-            <div className="space-y-1">
-              <label className="text-sm text-gray-700">Logo</label>
-              <ImageKitUploader onUploaded={(f)=> setFieldValue('logoUrl', f[0]?.url)} />
-              {values.logoUrl && <img src={values.logoUrl} alt="logo" className="h-10 mt-2" />}
+    <div>
+      <h1 className="text-2xl font-bold mb-6">Branding Settings</h1>
+      <form onSubmit={handleSubmit(onSubmit)} className="max-w-lg space-y-4">
+        <div>
+          <label htmlFor="brand-name" className="block text-sm font-medium mb-1">Display Name</label>
+          <input id="brand-name" {...register('name')} className="w-full border rounded-md px-3 py-2 text-sm" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="brand-primary" className="block text-sm font-medium mb-1">Primary Color</label>
+            <div className="flex gap-2 items-center">
+              <input id="brand-primary" type="color" {...register('primaryColor', hexColorRules)} className="h-10 w-10 rounded border cursor-pointer" aria-invalid={!!errors.primaryColor} />
+              <input {...register('primaryColor', hexColorRules)} className="flex-1 border rounded-md px-3 py-2 text-sm" placeholder="#4F46E5" aria-invalid={!!errors.primaryColor} />
             </div>
-            <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : 'Save'}</Button>
-          </Form>
-        )}
-      </Formik>
+          </div>
+          <div>
+            <label htmlFor="brand-surface" className="block text-sm font-medium mb-1">Surface Color</label>
+            <div className="flex gap-2 items-center">
+              <input id="brand-surface" type="color" {...register('surfaceColor', hexColorRules)} className="h-10 w-10 rounded border cursor-pointer" aria-invalid={!!errors.surfaceColor} />
+              <input {...register('surfaceColor', hexColorRules)} className="flex-1 border rounded-md px-3 py-2 text-sm" placeholder="#F3F4F6" aria-invalid={!!errors.surfaceColor} />
+            </div>
+          </div>
+        </div>
+        <div>
+          <label htmlFor="brand-logo" className="block text-sm font-medium mb-1">Logo URL</label>
+          <input id="brand-logo" type="url" {...register('logoUrl', urlRules)} className="w-full border rounded-md px-3 py-2 text-sm" placeholder="https://cdn.example.com/logo.png" aria-invalid={!!errors.logoUrl} />
+        </div>
+        <div>
+          <label htmlFor="brand-email" className="block text-sm font-medium mb-1">Email From</label>
+          <input id="brand-email" type="email" {...register('emailFrom', emailRules)} className="w-full border rounded-md px-3 py-2 text-sm" placeholder="support@yourcompany.com" aria-invalid={!!errors.emailFrom} />
+        </div>
+        <button type="submit" disabled={updateMutation.isPending || !isDirty} className="px-4 py-2.5 bg-[var(--brand-primary,#4F46E5)] text-white rounded-lg font-medium text-sm min-h-[44px] disabled:opacity-50 flex items-center gap-2">
+          {updateMutation.isPending ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : 'Save Changes'}
+        </button>
+        {updateMutation.isSuccess && <p className="text-green-600 text-sm">Saved!</p>}
+        {updateMutation.isError && <p className="text-red-500 text-sm" role="alert">Failed to save</p>}
+      </form>
     </div>
   );
 }

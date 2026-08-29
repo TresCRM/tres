@@ -1,8 +1,9 @@
 'use client';
 
 import { create } from 'zustand';
+import { setAccessToken } from '@/lib/api';
 
-export type Role = 'OWNER' | 'ADMIN' | 'AGENT' | 'BILLING' | 'READONLY' | 'INTEGRATION' | 'CUSTOMER';
+export type Role = 'OWNER' | 'ADMIN' | 'AGENT' | 'BILLING' | 'READONLY' | 'INTEGRATION' | 'CUSTOMER' | 'SUPER_ADMIN' | 'MANAGER' | 'SALES' | 'CUSTOMER_CARE' | 'SPECIAL';
 
 export interface AuthUser {
   id: string;
@@ -30,25 +31,24 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true,
 
   setAuth: (user, token) => {
-    // Mirror token to window for Axios interceptor
-    if (typeof window !== 'undefined') {
-      (window as any).__tc_access_token = token;
-    }
+    setAccessToken(token);
     set({ user, token, isAuthenticated: true, isLoading: false });
   },
 
   setToken: (token) => {
-    if (typeof window !== 'undefined') {
-      (window as any).__tc_access_token = token;
-    }
+    setAccessToken(token);
     set({ token });
   },
 
   clearAuth: () => {
-    if (typeof window !== 'undefined') {
-      (window as any).__tc_access_token = null;
-    }
+    setAccessToken(null);
     set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+    // Notify other tabs
+    try {
+      const bc = new BroadcastChannel('tc_auth');
+      bc.postMessage({ type: 'logout' });
+      bc.close();
+    } catch {}
   },
 
   setLoading: (isLoading) => set({ isLoading }),

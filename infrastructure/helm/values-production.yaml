@@ -1,0 +1,112 @@
+# Production environment overrides
+# Usage: helm install <release> ./api -f values-production.yaml
+
+# --- API overrides ---
+api:
+  replicaCount: 3
+
+  image:
+    tag: "" # Set by CI/CD pipeline to the exact Git SHA
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  ingress:
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "200"
+      nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+      nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: api.tres-crm.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: tres-crm-api-tls
+        hosts:
+          - api.tres-crm.com
+
+  env:
+    NODE_ENV: production
+    PORT: "4000"
+    LOG_LEVEL: warn
+
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "4000"
+    prometheus.io/path: "/metrics"
+
+# --- Web overrides ---
+web:
+  replicaCount: 3
+
+  image:
+    tag: "" # Set by CI/CD pipeline
+
+  resources:
+    requests:
+      cpu: 300m
+      memory: 384Mi
+    limits:
+      cpu: 750m
+      memory: 768Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+
+  ingress:
+    hosts:
+      - host: app.tres-crm.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: tres-crm-web-tls
+        hosts:
+          - app.tres-crm.com
+
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+    NEXT_TELEMETRY_DISABLED: "1"
+
+# --- Workers overrides ---
+workers:
+  replicaCount: 2
+
+  image:
+    tag: "" # Set by CI/CD pipeline
+
+  resources:
+    requests:
+      cpu: 300m
+      memory: 384Mi
+    limits:
+      cpu: 750m
+      memory: 768Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: warn

@@ -1,7 +1,8 @@
 import mongoose, { Schema, Types } from "mongoose";
 export interface CommentDoc {
   _id: Types.ObjectId; tenantId: Types.ObjectId; ticketId: Types.ObjectId;
-  authorId: Types.ObjectId; body: string; isAgent: boolean; createdAt: Date;
+  authorId: Types.ObjectId; body: string; isAgent: boolean; isInternal: boolean;
+  createdAt: Date;
   requestId?: string;
 }
 const CommentSchema = new Schema<CommentDoc>({
@@ -10,6 +11,7 @@ const CommentSchema = new Schema<CommentDoc>({
   authorId: { type: Schema.Types.ObjectId, ref:"User", required:true },
   body: { type:String, required:true },
   isAgent: { type:Boolean, default:true },
+  isInternal: { type:Boolean, default:false },
   requestId: { type: String, index: true, sparse: true }
 }, { timestamps: { createdAt: true, updatedAt: false } });
 
