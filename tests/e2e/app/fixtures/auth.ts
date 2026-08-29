@@ -43,7 +43,7 @@ export async function apiSignIn(
       throw new Error(`${role} was challenged for MFA but has no seeded secret`);
     }
     const verify = await api.post("/api/v1/auth/mfa-verify", {
-      data: { mfaTicket: body.mfaTicket, code: await totpFor(user.mfaSecret) },
+      data: { mfaTicket: body.mfaTicket, code: totpFor(user.mfaSecret) },
     });
     if (!verify.ok()) {
       throw new Error(`mfa-verify failed for ${role}: ${verify.status()} ${await verify.text()}`);

@@ -13,6 +13,19 @@ import { defineConfig, devices } from "@playwright/test";
  * the embeddable widget, which lands on visitors' machines. Set E2E_ALL_BROWSERS
  * to widen it.
  */
+/**
+ * The fixtures import API modules to seed the database, and those pull in
+ * config/env, which fails fast on a missing MONGO_URI or JWT_SECRET. The test
+ * process never opens a connection with these — the real Mongo URI is published
+ * by the API webServer at boot — but the import has to succeed. Setting them
+ * here keeps the suite independent of whatever happens to be in the ambient
+ * environment, which is what made an earlier failure show up only in CI.
+ */
+process.env.NODE_ENV ||= "test";
+process.env.MONGO_URI ||= "mongodb://127.0.0.1:27017/e2e-config-placeholder";
+process.env.JWT_SECRET ||= "e2e-jwt-secret-e2e-jwt-secret-32";
+process.env.SURVEY_JWT_SECRET ||= "e2e-survey-secret-e2e-survey-32";
+
 const API_PORT = Number(process.env.E2E_API_PORT || 4400);
 const WEB_PORT = Number(process.env.E2E_WEB_PORT || 3100);
 const WEB_ORIGIN = `http://127.0.0.1:${WEB_PORT}`;

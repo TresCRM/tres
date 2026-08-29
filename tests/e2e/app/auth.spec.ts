@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { seedTenant, cleanupTenant, closeDb, totpFor, type SeededTenant } from "./fixtures/stack";
+import { request as playwrightRequest } from "@playwright/test";
+import { seedTenant, cleanupTenant, closeDb, totpFor, readStack, type SeededTenant } from "./fixtures/stack";
 import { apiContext, apiSignIn, applySession } from "./fixtures/auth";
 
 /**
@@ -116,10 +117,8 @@ test.describe("API authentication", () => {
     // The ticket is pinned to the IP and User-Agent that requested it, so a
     // leaked ticket cannot be completed elsewhere.
     const first = await apiContext();
-    const second = await (
-      await import("@playwright/test")
-    ).request.newContext({
-      baseURL: (await import("./fixtures/stack")).readStack().apiUrl,
+    const second = await playwrightRequest.newContext({
+      baseURL: readStack().apiUrl,
       userAgent: "definitely-a-different-client/1.0",
     });
 
@@ -134,7 +133,7 @@ test.describe("API authentication", () => {
       const { mfaTicket } = await login.json();
 
       const stolen = await second.post("/api/v1/auth/mfa-verify", {
-        data: { mfaTicket, code: await totpFor(tenant.users.ADMIN.mfaSecret!) },
+        data: { mfaTicket, code: totpFor(tenant.users.ADMIN.mfaSecret!) },
       });
 
       expect(stolen.status()).toBe(401);

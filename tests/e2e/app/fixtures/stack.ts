@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import mongoose from "mongoose";
+import { Tenant } from "../../../../apps/api/src/models/Tenant";
+import { User } from "../../../../apps/api/src/models/User";
+import { Ticket } from "../../../../apps/api/src/models/Ticket";
+import { Customer } from "../../../../apps/api/src/models/Customer";
+import { hashPassword } from "../../../../apps/api/src/utils/auth";
+import { generateSecret, generateTOTP } from "../../../../apps/api/src/utils/totp";
 
 /**
  * Seeding and sign-in helpers for the app end-to-end suite.
@@ -84,12 +90,6 @@ function unique(prefix: string): string {
 export async function seedTenant(): Promise<SeededTenant> {
   await db();
 
-  // Imported lazily so the model files register against the live connection.
-  const { Tenant } = await import("../../../../apps/api/src/models/Tenant");
-  const { User } = await import("../../../../apps/api/src/models/User");
-  const { hashPassword } = await import("../../../../apps/api/src/utils/auth");
-  const { generateSecret } = await import("../../../../apps/api/src/utils/totp");
-
   const slug = unique("e2e");
   const tenant = await Tenant.create({
     slug,
@@ -129,10 +129,6 @@ export async function seedTenant(): Promise<SeededTenant> {
 /** Remove everything a seeded tenant owns. */
 export async function cleanupTenant(tenantId: string): Promise<void> {
   await db();
-  const { Tenant } = await import("../../../../apps/api/src/models/Tenant");
-  const { User } = await import("../../../../apps/api/src/models/User");
-  const { Ticket } = await import("../../../../apps/api/src/models/Ticket");
-  const { Customer } = await import("../../../../apps/api/src/models/Customer");
 
   await Promise.all([
     Ticket.deleteMany({ tenantId }),
@@ -143,7 +139,6 @@ export async function cleanupTenant(tenantId: string): Promise<void> {
 }
 
 /** A TOTP code valid right now for a seeded secret. */
-export async function totpFor(secret: string): Promise<string> {
-  const { generateTOTP } = await import("../../../../apps/api/src/utils/totp");
+export function totpFor(secret: string): string {
   return generateTOTP(secret);
 }

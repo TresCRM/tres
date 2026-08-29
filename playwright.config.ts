@@ -15,6 +15,10 @@ const PORT = Number(process.env.PORT || 4310);
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  // The app suite lives under tests/e2e/app and needs an API, a database and
+  // the web server. Without this it would be collected here too and fail with
+  // nothing running — which is exactly what happened when it was added.
+  testIgnore: ["**/app/**"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
