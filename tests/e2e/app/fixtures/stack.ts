@@ -5,6 +5,8 @@ import { Tenant } from "../../../../apps/api/src/models/Tenant";
 import { User } from "../../../../apps/api/src/models/User";
 import { Ticket } from "../../../../apps/api/src/models/Ticket";
 import { Customer } from "../../../../apps/api/src/models/Customer";
+import { Subscription } from "../../../../apps/api/src/models/Subscription";
+import { resolvePlan } from "../../../../apps/api/src/billing/plans";
 import { hashPassword } from "../../../../apps/api/src/utils/auth";
 import { generateSecret, generateTOTP } from "../../../../apps/api/src/utils/totp";
 
@@ -99,6 +101,22 @@ export async function seedTenant(): Promise<SeededTenant> {
     isActive: true,
   });
 
+  // Ticket and customer writes sit behind requireActiveSubscription, so a
+  // tenant with no subscription gets 402 on everything interesting. A real
+  // tenant has one; the fixture gives it one rather than bypassing the guard.
+  const plan = resolvePlan("CO-20");
+  const now = new Date();
+  await Subscription.create({
+    tenantId: tenant._id,
+    planCode: "CO-20",
+    status: "ACTIVE",
+    seats: plan?.seats ?? 20,
+    interval: "MONTH",
+    currentPeriodStart: now,
+    currentPeriodEnd: new Date(now.getTime() + 30 * 86400000),
+    entitlements: plan?.entitlements ?? {},
+  });
+
   const passwordHash = await hashPassword(PASSWORD);
   const users = {} as Record<SeedRole, SeededUser>;
 
@@ -131,6 +149,7 @@ export async function cleanupTenant(tenantId: string): Promise<void> {
   await db();
 
   await Promise.all([
+    Subscription.deleteMany({ tenantId }),
     Ticket.deleteMany({ tenantId }),
     Customer.deleteMany({ tenantId }),
     User.deleteMany({ tenantId }),
